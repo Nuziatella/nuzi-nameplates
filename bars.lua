@@ -333,9 +333,6 @@ local function isBloodlustFriendlyUnit(unit, info)
     if faction == "hostile" or faction == "neutral" then
         return false
     end
-    if isUnitTeamMember(unit) then
-        return false
-    end
     local forced = false
     if api.Unit ~= nil and api.Unit.UnitIsForceAttack ~= nil then
         pcall(function()
@@ -362,7 +359,7 @@ end
 local function getHpBarAppearance(unit, cfg, info)
     local relation = getBarRelation(unit, info)
     if relation == "bloodlust" then
-        if isTeamUnit(unit) then
+        if isUnitTeamMember(unit) then
             return relation, Helpers.Color01(cfg.bloodlust_team_color, { 255, 140, 40, 255 }), nil
         end
         return relation, Helpers.Color01(cfg.bloodlust_target_color, { 170, 80, 255, 255 }), nil
