@@ -14,16 +14,28 @@ Schema.GLOBAL_CHOICES = {
     {
         key = "frame_layer_mode",
         label = "Draw layer",
+        use_option_buttons = true,
         options = {
-            { value = "default", label = "Default" },
-            { value = "normal", label = "Normal" },
-            { value = "hud", label = "HUD" },
-            { value = "tooltip", label = "Tooltip" },
-            { value = "dialog", label = "Dialog" },
-            { value = "system", label = "System" },
-            { value = "questdirecting", label = "Quest Directing" },
-            { value = "game", label = "Game" },
-            { value = "background", label = "Background" }
+            { value = "default", label = "Default", description = "Uses the game's default window layer for the bars." },
+            { value = "normal", label = "Normal", description = "Standard addon/UI window layer." },
+            { value = "hud", label = "HUD", description = "Usually above normal windows; good for persistent overlays." },
+            { value = "tooltip", label = "Tooltip", description = "Usually above dialogs and standard UI, like tooltip-style overlays." },
+            { value = "dialog", label = "Dialog", description = "Popup/dialog style layer above most regular windows." },
+            { value = "system", label = "System", description = "Top-most system layer. Use sparingly if the bars must stay visible." },
+            { value = "questdirecting", label = "Quest Directing", description = "Quest-guidance style layer near navigation overlays." },
+            { value = "game", label = "Game", description = "Closer to gameplay/world overlays and often below standard UI." },
+            { value = "background", label = "Background", description = "Behind most addon and UI windows." }
+        },
+        help_lines = {
+            "Default: Uses the client default for addon windows.",
+            "Background: Behind most addon and UI windows.",
+            "Game: Near gameplay/world overlays, often below regular UI.",
+            "Normal: Standard addon/UI window level.",
+            "HUD: Above normal UI for persistent overlay elements.",
+            "Quest Directing: Near quest guidance and navigation overlays.",
+            "Dialog: Popup/dialog level above regular windows.",
+            "Tooltip: Very high layer, similar to tooltip overlays.",
+            "System: Top-most system layer. Use only when needed."
         }
     }
 }

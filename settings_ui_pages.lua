@@ -24,6 +24,15 @@ local function bindGlobalChoice(ctx, item, button)
     end)
 end
 
+local function bindGlobalChoiceOption(ctx, item, option, button)
+    button:SetHandler("OnClick", function()
+        local settings = ctx.Shared.EnsureSettings()
+        settings[item.key] = option.value
+        ctx.applyChanges()
+        ctx.refreshControls()
+    end)
+end
+
 local function bindStyleToggle(ctx, item, cb)
     cb:SetHandler("OnClick", function()
         local style = ctx.Shared.GetStyleSettings()
@@ -76,17 +85,17 @@ end
 
 function Pages.BuildGeneralPage(ctx, wnd)
     ctx.addPageWidget("general", ctx.createLabel("ghbGeneralTitle", wnd, "Global Behavior", 24, 98, 16, 220))
-    ctx.addPageWidget("general", ctx.createLabel("ghbGeneralHint", wnd, "Tracking toggles and draw priority for overhead bars.", 24, 122, 12, 620))
+    ctx.addPageWidget("general", ctx.createLabel("ghbGeneralHint", wnd, "Tracking toggles and draw priority for overhead bars. Draw layer cycles through the client UI strata.", 24, 122, 12, 700))
     ctx.addPageWidget("general", ctx.createLabel("ghbRuntimeTitle", wnd, "Runtime", 24, 148, 15, 220))
     for index = 1, 3 do
         local line = ctx.createLabel("ghbRuntimeLine" .. tostring(index), wnd, "", 24, 172 + ((index - 1) * 20), 12, 760)
         ctx.addPageWidget("general", line)
         ctx.SettingsUi.controls["runtime_line_" .. tostring(index)] = line
     end
-    local runtimeWarn = ctx.createLabel("ghbRuntimeWarn", wnd, "", 24, 236, 12, 900)
+    local runtimeWarn = ctx.createLabel("ghbRuntimeWarn", wnd, "", 24, 236, 12, 700)
     ctx.addPageWidget("general", runtimeWarn)
     ctx.SettingsUi.controls.runtime_warning = runtimeWarn
-    local leftX, rightX, startY, rowGap = 24, 500, 286, 42
+    local leftX, rightX, startY, rowGap = 24, 380, 286, 42
     for index, item in ipairs(ctx.Schema.GLOBAL_TOGGLES) do
         local colX = index <= 5 and leftX or rightX
         local rowY = startY + (((index - 1) % 5) * rowGap)
@@ -100,10 +109,61 @@ function Pages.BuildGeneralPage(ctx, wnd)
     for _, item in ipairs(ctx.Schema.GLOBAL_CHOICES or {}) do
         local label, btn = ctx.createChoiceRow("ghbGlobalChoice" .. item.key, wnd, item.label, 24, choiceY, 180)
         ctx.addPageWidget("general", label)
-        ctx.addPageWidget("general", btn)
-        ctx.SettingsUi.controls["global_choice_" .. item.key] = btn
-        bindGlobalChoice(ctx, item, btn)
-        choiceY = choiceY + 38
+        if item.use_option_buttons then
+            if btn.Show ~= nil then
+                btn:Show(false)
+            end
+        else
+            ctx.addPageWidget("general", btn)
+            ctx.SettingsUi.controls["global_choice_" .. item.key] = btn
+            bindGlobalChoice(ctx, item, btn)
+        end
+
+        local descY = choiceY + 82
+        if item.use_option_buttons then
+            local columns = 3
+            local buttonWidth = 140
+            local buttonHeight = 28
+            local buttonGapX = 12
+            local buttonGapY = 10
+            local startX = 214
+            local startY = choiceY - 2
+            for index, option in ipairs(item.options or {}) do
+                local col = (index - 1) % columns
+                local row = math.floor((index - 1) / columns)
+                local buttonX = startX + (col * (buttonWidth + buttonGapX))
+                local buttonY = startY + (row * (buttonHeight + buttonGapY))
+                local optionBtn = ctx.createButton(
+                    "ghbGlobalChoiceOption" .. item.key .. tostring(index),
+                    wnd,
+                    tostring(option.label or option.value or ""),
+                    buttonX,
+                    buttonY,
+                    buttonWidth,
+                    buttonHeight
+                )
+                ctx.addPageWidget("general", optionBtn)
+                ctx.SettingsUi.controls["global_choice_option_" .. item.key .. "_" .. tostring(option.value)] = optionBtn
+                bindGlobalChoiceOption(ctx, item, option, optionBtn)
+                descY = math.max(descY, buttonY + buttonHeight + 12)
+            end
+        end
+
+        local desc = ctx.createLabel("ghbGlobalChoiceDesc" .. item.key, wnd, "", 24, descY, 12, 700)
+        ctx.addPageWidget("general", desc)
+        ctx.SettingsUi.controls["global_choice_desc_" .. item.key] = desc
+        choiceY = descY + 30
+        if type(item.help_lines) == "table" and #item.help_lines > 0 then
+            local helpTitle = ctx.createLabel("ghbGlobalChoiceHelpTitle" .. item.key, wnd, "Layer Guide", 24, choiceY, 13, 180)
+            ctx.addPageWidget("general", helpTitle)
+            choiceY = choiceY + 24
+            for index, line in ipairs(item.help_lines) do
+                local help = ctx.createLabel("ghbGlobalChoiceHelp" .. item.key .. tostring(index), wnd, line, 24, choiceY, 12, 700)
+                ctx.addPageWidget("general", help)
+                choiceY = choiceY + 18
+            end
+            choiceY = choiceY + 10
+        end
     end
 end
 
@@ -111,7 +171,7 @@ function Pages.BuildLayoutPage(ctx, wnd)
     ctx.addPageWidget("layout", ctx.createLabel("ghbLayoutTitle", wnd, "Layout", 24, 98, 16, 220))
     ctx.addPageWidget("layout", ctx.createLabel("ghbLayoutHint", wnd, "Bar size, visibility, spacing, and overall placement.", 24, 122, 12, 520))
 
-    local toggleLeftX, toggleRightX, toggleY, toggleGap = 24, 500, 164, 40
+    local toggleLeftX, toggleRightX, toggleY, toggleGap = 24, 380, 164, 40
     for index, item in ipairs(ctx.Schema.STYLE_TOGGLES) do
         local colX = index <= 4 and toggleLeftX or toggleRightX
         local rowY = toggleY + (((index - 1) % 4) * toggleGap)
@@ -169,9 +229,9 @@ function Pages.BuildColorsPage(ctx, wnd)
     ctx.addPageWidget("colors", ctx.createLabel("ghbColorTitle", wnd, "Colors", 24, 98, 16, 220))
     ctx.addPageWidget("colors", ctx.createLabel("ghbColorHint", wnd, "Tune HP/MP bars and text colors. Role colors use built-in tank/healer/melee/ranged/magic colors.", 24, 122, 12, 640))
 
-    local prevBtn = ctx.createButton("ghbColorsPrev", wnd, "Prev", 690, 96, 70, 26)
-    local nextBtn = ctx.createButton("ghbColorsNext", wnd, "Next", 848, 96, 70, 26)
-    local pageLabel = ctx.createLabel("ghbColorsPage", wnd, "Page 1 / 1", 770, 100, 12, 90)
+    local prevBtn = ctx.createButton("ghbColorsPrev", wnd, "Prev", 500, 96, 70, 26)
+    local nextBtn = ctx.createButton("ghbColorsNext", wnd, "Next", 652, 96, 70, 26)
+    local pageLabel = ctx.createLabel("ghbColorsPage", wnd, "Page 1 / 1", 578, 100, 12, 70)
     ctx.addPageWidget("colors", prevBtn)
     ctx.addPageWidget("colors", nextBtn)
     ctx.addPageWidget("colors", pageLabel)

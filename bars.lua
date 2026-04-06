@@ -25,6 +25,8 @@ local Bars = {
     layer_mode = nil
 }
 
+local applyLayerToFrame
+
 local VALID_UI_LAYERS = {
     background = true,
     game = true,
@@ -204,6 +206,7 @@ local function ensureFrame(unit)
     Helpers.SafeClickable(eventWindow, false)
     frame.eventWindow = eventWindow
     frame.cache = {}
+    applyLayerToFrame(frame)
     Bars.frames[unit] = frame
     return frame
 end
@@ -222,12 +225,53 @@ local function currentLayerMode(settings)
     return "default"
 end
 
+local function applyLayerToWidget(widget)
+    if widget == nil or widget.SetUILayer == nil then
+        return
+    end
+    if Bars.layer_mode == nil or Bars.layer_mode == "default" then
+        return
+    end
+    pcall(function()
+        widget:SetUILayer(Bars.layer_mode)
+    end)
+end
+
+applyLayerToFrame = function(frame)
+    if frame == nil then
+        return
+    end
+    applyLayerToWidget(frame)
+    applyLayerToWidget(frame.eventWindow)
+    applyLayerToWidget(frame.nameLabel)
+    applyLayerToWidget(frame.guildLabel)
+    applyLayerToWidget(frame.roleLabel)
+    applyLayerToWidget(frame.hpValueLabel)
+    applyLayerToWidget(frame.mpValueLabel)
+    applyLayerToWidget(frame.distanceLabel)
+    applyLayerToWidget(frame.hpBar)
+    applyLayerToWidget(frame.mpBar)
+    if frame.hpBar ~= nil then
+        applyLayerToWidget(frame.hpBar.statusBar)
+    end
+    if frame.mpBar ~= nil then
+        applyLayerToWidget(frame.mpBar.statusBar)
+    end
+end
+
+local function hasAnyFrames()
+    for _ in pairs(Bars.frames) do
+        return true
+    end
+    return false
+end
+
 local function syncLayerMode(settings)
     local mode = currentLayerMode(settings)
     if Bars.layer_mode == mode then
         return
     end
-    if next(Bars.frames) ~= nil then
+    if hasAnyFrames() then
         Bars.Unload()
     end
     Bars.layer_mode = mode
@@ -455,6 +499,7 @@ local function updateOne(unit)
     end
 
     local frame = ensureFrame(unit)
+    applyLayerToFrame(frame)
     local unitId = nil
     pcall(function()
         unitId = api.Unit:GetUnitId(unit)

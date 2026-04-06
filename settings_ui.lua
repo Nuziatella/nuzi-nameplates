@@ -30,7 +30,7 @@ local SettingsUi = {
     color_group_widgets = {}
 }
 
-local BASE_WINDOW_WIDTH = 980
+local BASE_WINDOW_WIDTH = 760
 local BASE_WINDOW_HEIGHT = 900
 
 local function safeShow(widget, show)
@@ -135,6 +135,19 @@ local function optionLabel(choiceDef, value)
         end
     end
     return tostring(value or "")
+end
+
+local function optionDescription(choiceDef, value)
+    for _, option in ipairs(choiceDef.options or {}) do
+        if tostring(option.value) == tostring(value) then
+            return tostring(option.description or option.label or value or "")
+        end
+    end
+    return ""
+end
+
+local function optionButtonControlKey(choiceKey, optionValue)
+    return "global_choice_option_" .. tostring(choiceKey or "") .. "_" .. tostring(optionValue or "")
 end
 
 local function nextOptionValue(choiceDef, currentValue)
@@ -295,6 +308,21 @@ local function refreshControls()
         if ctrl ~= nil and ctrl.SetText ~= nil then
             ctrl:SetText(optionLabel(item, settings[item.key]))
         end
+        for _, option in ipairs(item.options or {}) do
+            local optionCtrl = SettingsUi.controls[optionButtonControlKey(item.key, option.value)]
+            if optionCtrl ~= nil and optionCtrl.SetText ~= nil then
+                local label = tostring(option.label or option.value or "")
+                if tostring(settings[item.key]) == tostring(option.value) then
+                    optionCtrl:SetText("[" .. label .. "]")
+                else
+                    optionCtrl:SetText(label)
+                end
+            end
+        end
+        local desc = SettingsUi.controls["global_choice_desc_" .. item.key]
+        if desc ~= nil and desc.SetText ~= nil then
+            desc:SetText(optionDescription(item, settings[item.key]))
+        end
     end
     for _, item in ipairs(Schema.STYLE_TOGGLES) do
         local ctrl = SettingsUi.controls["style_toggle_" .. item.key]
@@ -366,7 +394,13 @@ local function ensureWindow()
     if SettingsUi.window ~= nil then
         return
     end
-    local wnd = api.Interface:CreateWindow(Shared.CONSTANTS.WINDOW_ID, "Gharka Bars", BASE_WINDOW_WIDTH, BASE_WINDOW_HEIGHT)
+    local ok, wnd = pcall(function()
+        return api.Interface:CreateWindow(Shared.CONSTANTS.WINDOW_ID, "Gharka Bars", BASE_WINDOW_WIDTH, BASE_WINDOW_HEIGHT)
+    end)
+    if not ok or wnd == nil then
+        SettingsUi.window = nil
+        return
+    end
     SettingsUi.window = wnd
     wnd:AddAnchor("CENTER", "UIParent", 0, 0)
     if wnd.SetHandler ~= nil then
@@ -402,7 +436,7 @@ local function ensureWindow()
     local importBtn = createButton("ghbImport", wnd, "Import", 244, 852, 100, 28)
     local resetStyleBtn = createButton("ghbResetStyle", wnd, "Reset Style", 384, 852, 110, 28)
     local resetAllBtn = createButton("ghbResetAll", wnd, "Reset All", 504, 852, 110, 28)
-    local closeBtn = createButton("ghbClose", wnd, "Close", 866, 852, 90, 28)
+    local closeBtn = createButton("ghbClose", wnd, "Close", 646, 852, 90, 28)
 
     saveBtn:SetHandler("OnClick", function() runAction("save", "Saved", "Save failed", false) end)
     backupBtn:SetHandler("OnClick", function() runAction("backup", "Backup saved", "Backup failed", false) end)
@@ -503,17 +537,23 @@ end
 
 function SettingsUi.Init(actions)
     SettingsUi.actions = actions or {}
-    ensureWindow()
     ensureButton()
-    refreshControls()
+    if SettingsUi.window ~= nil then
+        refreshControls()
+    end
 end
 
 function SettingsUi.Refresh()
-    refreshControls()
+    if SettingsUi.window ~= nil then
+        refreshControls()
+    end
 end
 
 function SettingsUi.Toggle()
     ensureWindow()
+    if SettingsUi.window == nil then
+        return
+    end
     applyWindowScale()
     safeShow(SettingsUi.window, true)
     refreshControls()
