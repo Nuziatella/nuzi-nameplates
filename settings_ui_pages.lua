@@ -225,6 +225,44 @@ function Pages.BuildTextPage(ctx, wnd)
     end)
 end
 
+function Pages.BuildCcPage(ctx, wnd)
+    ctx.addPageWidget("cc", ctx.createLabel("ghbCcTitle", wnd, "Crowd Control", 24, 98, 16, 220))
+    ctx.addPageWidget("cc", ctx.createLabel("ghbCcHint", wnd, "Attach CC icons and timers directly to the custom bar frames instead of using a separate floating widget.", 24, 122, 12, 700))
+
+    local toggleY = 170
+    for index, item in ipairs(ctx.Schema.CC_TOGGLES or {}) do
+        local cb = ctx.createCheckbox("ghbCcToggle" .. item.key, wnd, item.label, 24, toggleY + ((index - 1) * 40), 280)
+        ctx.addPageWidget("cc", cb.button)
+        ctx.addPageWidget("cc", cb.label)
+        ctx.SettingsUi.controls["cc_toggle_" .. item.key] = cb
+        bindStyleToggle(ctx, item, cb)
+    end
+
+    local choiceY = 320
+    for _, item in ipairs(ctx.Schema.CC_CHOICES or {}) do
+        local label, btn = ctx.createChoiceRow("ghbCcChoice" .. item.key, wnd, item.label, 24, choiceY, 190)
+        ctx.addPageWidget("cc", label)
+        ctx.addPageWidget("cc", btn)
+        ctx.SettingsUi.controls["cc_choice_" .. item.key] = btn
+        bindStyleChoice(ctx, item, btn)
+        choiceY = choiceY + 38
+    end
+
+    ctx.addPageWidget("cc", ctx.createLabel("ghbCcSliders", wnd, "Placement and Size", 24, 420, 15, 260))
+    eachSlider(ctx.Schema.CC_SLIDERS or {}, function(index, item)
+        local colX = index <= 3 and 24 or 500
+        local localIndex = index <= 3 and index or (index - 3)
+        local rowY = 454 + ((localIndex - 1) * 38)
+        local label, slider, value = ctx.createSlider("ghbCcSlider" .. item.key, wnd, item.label, colX, rowY, item.min, item.max)
+        ctx.addPageWidget("cc", label)
+        ctx.addPageWidget("cc", slider)
+        ctx.addPageWidget("cc", value)
+        ctx.SettingsUi.controls["cc_slider_" .. item.key] = slider
+        ctx.SettingsUi.controls["cc_slider_val_" .. item.key] = value
+        bindStyleSlider(ctx, item, slider, value)
+    end)
+end
+
 function Pages.BuildColorsPage(ctx, wnd)
     ctx.addPageWidget("colors", ctx.createLabel("ghbColorTitle", wnd, "Colors", 24, 98, 16, 220))
     ctx.addPageWidget("colors", ctx.createLabel("ghbColorHint", wnd, "Tune HP/MP bars and text colors. Role colors use built-in tank/healer/melee/ranged/magic colors.", 24, 122, 12, 640))

@@ -24,7 +24,7 @@ local SettingsUi = {
     actions = nil,
     dragging = false,
     active_page = "general",
-    page_widgets = { general = {}, layout = {}, text = {}, colors = {} },
+    page_widgets = { general = {}, layout = {}, text = {}, cc = {}, colors = {} },
     color_page = 1,
     color_page_count = 1,
     color_group_widgets = {}
@@ -249,6 +249,7 @@ local function setActivePage(page)
         { key = "general", text = "General" },
         { key = "layout", text = "Layout" },
         { key = "text", text = "Text" },
+        { key = "cc", text = "CC" },
         { key = "colors", text = "Colors" }
     }
     for _, tab in ipairs(tabs) do
@@ -332,6 +333,19 @@ local function refreshControls()
     end
     refreshSliderValues("style_slider_", Schema.LAYOUT_SLIDERS, style)
     refreshSliderValues("style_slider_", Schema.TEXT_SLIDERS, style)
+    for _, item in ipairs(Schema.CC_TOGGLES or {}) do
+        local ctrl = SettingsUi.controls["cc_toggle_" .. item.key]
+        if ctrl ~= nil and ctrl.SetChecked ~= nil then
+            ctrl:SetChecked(style[item.key] and true or false)
+        end
+    end
+    for _, item in ipairs(Schema.CC_CHOICES or {}) do
+        local ctrl = SettingsUi.controls["cc_choice_" .. item.key]
+        if ctrl ~= nil and ctrl.SetText ~= nil then
+            ctrl:SetText(optionLabel(item, style[item.key]))
+        end
+    end
+    refreshSliderValues("cc_slider_", Schema.CC_SLIDERS, style)
     for _, item in ipairs(Schema.STYLE_CHOICES) do
         local ctrl = SettingsUi.controls["style_choice_" .. item.key]
         if ctrl ~= nil and ctrl.SetText ~= nil then
@@ -414,7 +428,8 @@ local function ensureWindow()
         { key = "general", text = "General", x = 24 },
         { key = "layout", text = "Layout", x = 152 },
         { key = "text", text = "Text", x = 280 },
-        { key = "colors", text = "Colors", x = 408 }
+        { key = "cc", text = "CC", x = 408 },
+        { key = "colors", text = "Colors", x = 536 }
     }
     for _, tab in ipairs(tabs) do
         local btn = createButton("ghbTab" .. tab.key, wnd, tab.text, tab.x, 72, 120, 28)
@@ -428,6 +443,7 @@ local function ensureWindow()
     Pages.BuildGeneralPage(ctx, wnd)
     Pages.BuildLayoutPage(ctx, wnd)
     Pages.BuildTextPage(ctx, wnd)
+    Pages.BuildCcPage(ctx, wnd)
     Pages.BuildColorsPage(ctx, wnd)
 
     SettingsUi.controls.status_label = createLabel("ghbStatus", wnd, "", 24, 822, 12, 900)
@@ -575,7 +591,7 @@ function SettingsUi.Unload()
     SettingsUi.controls = {}
     SettingsUi.dragging = false
     SettingsUi.active_page = "general"
-    SettingsUi.page_widgets = { general = {}, layout = {}, text = {}, colors = {} }
+    SettingsUi.page_widgets = { general = {}, layout = {}, text = {}, cc = {}, colors = {} }
     SettingsUi.color_page = 1
     SettingsUi.color_page_count = 1
     SettingsUi.color_group_widgets = {}

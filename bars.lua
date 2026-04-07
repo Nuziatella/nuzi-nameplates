@@ -17,6 +17,7 @@ local Helpers = loadModule("bar_helpers")
 local Layout = loadModule("bars_layout")
 local Role = loadModule("role")
 local Compat = loadModule("compat")
+local CcEffects = loadModule("cc_effects")
 
 local Bars = {
     frames = {},
@@ -43,9 +44,327 @@ local TARGET_TINT_COLOR = { 255, 245, 0, 170 }
 local BLOODLUST_BUFF_ID = 1482
 local HOSTILE_TEXT_COLOR = { 255, 244, 244, 255 }
 local NEUTRAL_TEXT_COLOR = { 40, 28, 0, 255 }
+local CC_SCAN_INTERVAL_MS = 250
+local CC_EXTRA_ICON_COUNT = 3
+local UNIT_STATIC_REFRESH_MS = 2000
+local PLAYER_CC_VISIBILITY_CACHE = {
+    last_scan_ms = 0,
+    effects = {}
+}
 
 local function clamp(v, lo, hi, default)
     return Shared.Clamp(v, lo, hi, default)
+end
+
+local function safeUiNowMs()
+    if api.Time == nil or api.Time.GetUiMsec == nil then
+        return 0
+    end
+    local ok, value = pcall(function()
+        return api.Time:GetUiMsec()
+    end)
+    if not ok then
+        return 0
+    end
+    return tonumber(value) or 0
+end
+
+local function safeCreateCcIcon(id, parent)
+    if type(CreateItemIconButton) ~= "function" or parent == nil then
+        return nil
+    end
+    local ok, icon = pcall(function()
+        return CreateItemIconButton(id, parent)
+    end)
+    if not ok or icon == nil then
+        return nil
+    end
+    Helpers.SafeClickable(icon, false)
+    Helpers.SafeShow(icon, false)
+    if F_SLOT ~= nil and F_SLOT.ApplySlotSkin ~= nil and SLOT_STYLE ~= nil and icon.back ~= nil then
+        local style = SLOT_STYLE.DEFAULT or SLOT_STYLE.BUFF or SLOT_STYLE.ITEM
+        if style ~= nil then
+            pcall(function()
+                F_SLOT.ApplySlotSkin(icon, icon.back, style)
+            end)
+        end
+    end
+    return icon
+end
+
+local function safeSetIconPath(icon, path)
+    if icon == nil or type(path) ~= "string" or path == "" then
+        return
+    end
+    pcall(function()
+        if F_SLOT ~= nil and F_SLOT.SetIconBackGround ~= nil then
+            F_SLOT.SetIconBackGround(icon, path)
+        elseif icon.SetIconPath ~= nil then
+            icon:SetIconPath(path)
+        end
+    end)
+end
+
+local function makeCcTimerLabel(id, parent)
+    if parent == nil then
+        return nil
+    end
+    local label = api.Interface:CreateWidget("label", id, parent)
+    Helpers.SafeClickable(label, false)
+    Helpers.SafeShow(label, false)
+    pcall(function()
+        if label.style ~= nil then
+            if label.style.SetAlign ~= nil then
+                label.style:SetAlign(ALIGN.CENTER)
+            end
+            if label.style.SetShadow ~= nil then
+                label.style:SetShadow(true)
+            end
+        end
+    end)
+    return label
+end
+
+local function setCcTimerStyle(label, fontSize)
+    if label == nil then
+        return
+    end
+    pcall(function()
+        if label.SetExtent ~= nil then
+            label:SetExtent(56, (tonumber(fontSize) or 11) + 6)
+        end
+        if label.style ~= nil and label.style.SetFontSize ~= nil then
+            label.style:SetFontSize(fontSize)
+        end
+    end)
+end
+
+local function hideCcWidgets(frame)
+    if frame == nil then
+        return
+    end
+    Helpers.SafeShow(frame.ccPrimary, false)
+    Helpers.SafeShow(frame.ccPrimaryTimer, false)
+    for _, entry in ipairs(frame.ccExtras or {}) do
+        Helpers.SafeShow(entry.icon, false)
+        Helpers.SafeShow(entry.timer, false)
+    end
+end
+
+local function shouldTrackCcUnit(unit)
+    return unit == "player" or unit == "target" or unit == "watchtarget"
+end
+
+local function normalizeUnitId(unitId)
+    if unitId == nil then
+        return nil
+    end
+    local valueType = type(unitId)
+    if valueType == "string" then
+        local text = tostring(unitId)
+        if text == "" then
+            return nil
+        end
+        return text
+    end
+    if valueType == "number" then
+        return tostring(unitId)
+    end
+    return nil
+end
+
+local function getUnitInfo(unit, unitId)
+    local normalizedId = normalizeUnitId(unitId)
+    local info = nil
+    if normalizedId ~= nil then
+        pcall(function()
+            info = api.Unit:GetUnitInfoById(normalizedId)
+        end)
+    end
+    if type(info) ~= "table" and api.Unit.UnitInfo ~= nil then
+        pcall(function()
+            info = api.Unit:UnitInfo(unit)
+        end)
+    end
+    if type(info) ~= "table" then
+        return nil
+    end
+    return info
+end
+
+local function getUnitName(unitId, info)
+    local normalizedId = normalizeUnitId(unitId)
+    local nameText = ""
+    if normalizedId ~= nil then
+        pcall(function()
+            nameText = api.Unit:GetUnitNameById(normalizedId) or ""
+        end)
+    end
+    if nameText == "" and type(info) == "table" then
+        nameText = tostring(info.name or info.unitName or "")
+    end
+    return nameText
+end
+
+local function getCachedUnitStatic(frame, unit, unitId, includeRole, nowMs)
+    if frame == nil or frame.cache == nil or unitId == nil then
+        return nil
+    end
+    local cached = frame.cache.unit_static
+    local refreshNeeded = true
+    if type(cached) == "table" and cached.unit_id == unitId then
+        refreshNeeded = false
+        local last = tonumber(cached.last_refresh_ms) or 0
+        if nowMs > 0 and last > 0 and (nowMs - last) >= UNIT_STATIC_REFRESH_MS then
+            refreshNeeded = true
+        end
+        if includeRole and cached.role == nil then
+            refreshNeeded = true
+        end
+    end
+    if not refreshNeeded then
+        return cached
+    end
+
+    local info = getUnitInfo(unit, unitId)
+    local role = nil
+    local className = nil
+    if includeRole then
+        role, className = Role.GetRoleForUnit(unit)
+    end
+
+    cached = {
+        unit_id = unitId,
+        last_refresh_ms = nowMs,
+        info = info,
+        name_text = getUnitName(unitId, info),
+        guild_text = type(info) == "table" and tostring(info.expeditionName or "") or "",
+        role = role,
+        class_name = className
+    }
+    frame.cache.unit_static = cached
+    return cached
+end
+
+local function getCachedCcEffects(frame, unit)
+    if frame == nil or frame.cache == nil or CcEffects == nil then
+        return {}
+    end
+    local now = safeUiNowMs()
+    local last = tonumber(frame.cache.cc_last_scan_ms) or 0
+    if type(frame.cache.cc_effects) == "table" and now > 0 and last > 0 and (now - last) < CC_SCAN_INTERVAL_MS then
+        return frame.cache.cc_effects
+    end
+    local effects = CcEffects.ScanUnit(unit)
+    frame.cache.cc_effects = effects
+    frame.cache.cc_last_scan_ms = now
+    return effects
+end
+
+local function getPlayerVisibilityCcEffects(nowMs)
+    if CcEffects == nil then
+        return {}
+    end
+    local last = tonumber(PLAYER_CC_VISIBILITY_CACHE.last_scan_ms) or 0
+    if nowMs > 0 and last > 0 and (nowMs - last) < CC_SCAN_INTERVAL_MS then
+        return PLAYER_CC_VISIBILITY_CACHE.effects
+    end
+    local effects = CcEffects.ScanUnit("player")
+    PLAYER_CC_VISIBILITY_CACHE.effects = effects
+    PLAYER_CC_VISIBILITY_CACHE.last_scan_ms = nowMs
+    return effects
+end
+
+local function anchorCcWidgets(frame, cfg)
+    if frame == nil or frame.ccPrimary == nil then
+        return
+    end
+    local anchor = tostring(cfg.cc_anchor or "left")
+    local iconSize = clamp(cfg.cc_icon_size, 16, 48, 28)
+    local secondarySize = clamp(cfg.cc_secondary_icon_size, 10, 32, 16)
+    local gap = clamp(cfg.cc_gap, 0, 12, 4)
+    local offsetX = clamp(cfg.cc_offset_x, -80, 80, 0)
+    local offsetY = clamp(cfg.cc_offset_y, -80, 80, 0)
+    local timerFont = clamp(cfg.cc_timer_font_size, 8, 24, 11)
+    local secondaryTimerFont = math.max(8, timerFont - 2)
+    local host = frame.hpBar or frame
+    pcall(function()
+        if frame.ccPrimary.SetExtent ~= nil then
+            frame.ccPrimary:SetExtent(iconSize, iconSize)
+        end
+    end)
+    setCcTimerStyle(frame.ccPrimaryTimer, timerFont)
+    Helpers.SafeAnchor(frame.ccPrimaryTimer, "CENTER", frame.ccPrimary, "CENTER", 0, 0)
+
+    if anchor == "right" then
+        Helpers.SafeAnchor(frame.ccPrimary, "LEFT", host, "RIGHT", gap + offsetX, offsetY)
+    elseif anchor == "top" then
+        Helpers.SafeAnchor(frame.ccPrimary, "BOTTOMLEFT", host, "TOPLEFT", offsetX, -gap + offsetY)
+    else
+        Helpers.SafeAnchor(frame.ccPrimary, "RIGHT", host, "LEFT", -gap + offsetX, offsetY)
+    end
+
+    local previous = frame.ccPrimary
+    for _, entry in ipairs(frame.ccExtras or {}) do
+        if entry.icon ~= nil and entry.icon.SetExtent ~= nil then
+            pcall(function()
+                entry.icon:SetExtent(secondarySize, secondarySize)
+            end)
+        end
+        setCcTimerStyle(entry.timer, secondaryTimerFont)
+        Helpers.SafeAnchor(entry.timer, "CENTER", entry.icon, "CENTER", 0, 0)
+        if anchor == "top" then
+            Helpers.SafeAnchor(entry.icon, "LEFT", previous, "RIGHT", gap, 0)
+        else
+            Helpers.SafeAnchor(entry.icon, "BOTTOM", previous, "TOP", 0, -gap)
+        end
+        previous = entry.icon
+    end
+end
+
+local function updateCcWidgets(frame, cfg, effects, forceShow)
+    if frame == nil or frame.ccPrimary == nil then
+        return
+    end
+    if ((not forceShow) and cfg.show_cc == false) or type(effects) ~= "table" or #effects == 0 then
+        hideCcWidgets(frame)
+        return
+    end
+
+    anchorCcWidgets(frame, cfg)
+
+    local primary = effects[1]
+    safeSetIconPath(frame.ccPrimary, primary.path)
+    Helpers.SafeShow(frame.ccPrimary, true)
+    if cfg.show_cc_timer ~= false and frame.ccPrimaryTimer ~= nil then
+        Helpers.SafeSetText(frame.ccPrimaryTimer, string.format("%.1f", math.max(0, (tonumber(primary.time_left_ms) or 0) / 1000)))
+        Helpers.SafeShow(frame.ccPrimaryTimer, true)
+    else
+        Helpers.SafeShow(frame.ccPrimaryTimer, false)
+    end
+
+    local maxIcons = clamp(cfg.cc_max_icons, 1, 4, 3)
+    local extraCount = 0
+    if cfg.show_cc_secondary ~= false and maxIcons > 1 then
+        extraCount = math.min(#effects - 1, maxIcons - 1, #frame.ccExtras)
+    end
+
+    for index, entry in ipairs(frame.ccExtras or {}) do
+        local effect = effects[index + 1]
+        if index <= extraCount and effect ~= nil then
+            safeSetIconPath(entry.icon, effect.path)
+            Helpers.SafeShow(entry.icon, true)
+            if cfg.show_cc_timer ~= false and entry.timer ~= nil then
+                Helpers.SafeSetText(entry.timer, string.format("%.1f", math.max(0, (tonumber(effect.time_left_ms) or 0) / 1000)))
+                Helpers.SafeShow(entry.timer, true)
+            else
+                Helpers.SafeShow(entry.timer, false)
+            end
+        else
+            Helpers.SafeShow(entry.icon, false)
+            Helpers.SafeShow(entry.timer, false)
+        end
+    end
 end
 
 local function makeBorderSet(frame, rgba255)
@@ -196,6 +515,17 @@ local function ensureFrame(unit)
     frame.hpValueLabel = makeLabel("hpValue")
     frame.mpValueLabel = makeLabel("mpValue")
     frame.distanceLabel = makeLabel("distance")
+    frame.ccPrimary = safeCreateCcIcon(frameId .. ".ccPrimary", frame)
+    frame.ccPrimaryTimer = makeCcTimerLabel(frameId .. ".ccPrimaryTimer", frame.ccPrimary)
+    frame.ccExtras = {}
+    for index = 1, CC_EXTRA_ICON_COUNT do
+        local icon = safeCreateCcIcon(frameId .. ".ccExtra" .. tostring(index), frame)
+        local timer = makeCcTimerLabel(frameId .. ".ccExtraTimer" .. tostring(index), icon)
+        table.insert(frame.ccExtras, {
+            icon = icon,
+            timer = timer
+        })
+    end
     local eventWindow = api.Interface:CreateWidget("emptywidget", frameId .. ".event", frame)
     pcall(function()
         eventWindow:AddAnchor("TOPLEFT", frame, 0, 0)
@@ -206,6 +536,7 @@ local function ensureFrame(unit)
     Helpers.SafeClickable(eventWindow, false)
     frame.eventWindow = eventWindow
     frame.cache = {}
+    hideCcWidgets(frame)
     applyLayerToFrame(frame)
     Bars.frames[unit] = frame
     return frame
@@ -249,8 +580,20 @@ applyLayerToFrame = function(frame)
     applyLayerToWidget(frame.hpValueLabel)
     applyLayerToWidget(frame.mpValueLabel)
     applyLayerToWidget(frame.distanceLabel)
+    applyLayerToWidget(frame.ccPrimary)
+    applyLayerToWidget(frame.ccPrimaryTimer)
     applyLayerToWidget(frame.hpBar)
     applyLayerToWidget(frame.mpBar)
+    if frame.ccPrimary ~= nil then
+        applyLayerToWidget(frame.ccPrimary.back)
+    end
+    for _, entry in ipairs(frame.ccExtras or {}) do
+        applyLayerToWidget(entry.icon)
+        applyLayerToWidget(entry.timer)
+        if entry.icon ~= nil then
+            applyLayerToWidget(entry.icon.back)
+        end
+    end
     if frame.hpBar ~= nil then
         applyLayerToWidget(frame.hpBar.statusBar)
     end
@@ -377,13 +720,7 @@ local function isBloodlustFriendlyUnit(unit, info)
     if faction == "hostile" or faction == "neutral" then
         return false
     end
-    local forced = false
-    if api.Unit ~= nil and api.Unit.UnitIsForceAttack ~= nil then
-        pcall(function()
-            forced = api.Unit:UnitIsForceAttack(unit) and true or false
-        end)
-    end
-    return forced or unitHasBuff(unit, BLOODLUST_BUFF_ID)
+    return unitHasBuff(unit, BLOODLUST_BUFF_ID)
 end
 
 local function getBarRelation(unit, info)
@@ -455,6 +792,7 @@ local function hideFrame(frame)
     Role.Hide(frame)
     setBorderVisible(frame.targetGlow, false, TARGET_GLOW_COLOR)
     setBorderVisible(frame.targetTint, false, TARGET_TINT_COLOR)
+    hideCcWidgets(frame)
     Helpers.SafeShow(frame, false)
 end
 
@@ -490,10 +828,16 @@ local function placeFrame(frame, cfg, screenX, screenY)
     Helpers.SafeAnchor(frame, "TOPLEFT", "UIParent", "TOPLEFT", posX, posY)
 end
 
-local function updateOne(unit)
-    local settings = Shared.EnsureSettings()
-    syncLayerMode(settings)
-    if not (settings.enabled and shouldShowUnit(unit, settings)) then
+local function updateOne(unit, context)
+    local settings = context.settings
+    local cfg = context.cfg
+    local playerForcedCcEffects = nil
+    local forceShowPlayerCc = false
+    if unit == "player" then
+        playerForcedCcEffects = getPlayerVisibilityCcEffects(context.nowMs)
+        forceShowPlayerCc = type(playerForcedCcEffects) == "table" and #playerForcedCcEffects > 0
+    end
+    if not (settings.enabled and (shouldShowUnit(unit, settings) or forceShowPlayerCc)) then
         hideFrame(Bars.frames[unit])
         return
     end
@@ -515,7 +859,6 @@ local function updateOne(unit)
         return
     end
 
-    local cfg = Shared.GetStyleSettings()
     local distance = nil
     if api.Unit.UnitDistance ~= nil then
         pcall(function()
@@ -525,16 +868,6 @@ local function updateOne(unit)
     if type(distance) == "number" and distance > clamp(cfg.max_distance, 10, 300, 130) then
         hideFrame(frame)
         return
-    end
-
-    local info = nil
-    pcall(function()
-        info = api.Unit:GetUnitInfoById(unitId)
-    end)
-    if type(info) ~= "table" and api.Unit.UnitInfo ~= nil then
-        pcall(function()
-            info = api.Unit:UnitInfo(unit)
-        end)
     end
 
     local hp = 0
@@ -548,29 +881,18 @@ local function updateOne(unit)
         mpMax = api.Unit:UnitMaxMana(unit) or 0
     end)
 
-    local targetUnitId = nil
-    pcall(function()
-        targetUnitId = api.Unit:GetUnitId("target")
-    end)
-    local isCurrentTarget = targetUnitId ~= nil and unitId == targetUnitId
+    local isCurrentTarget = context.targetUnitId ~= nil and unitId == context.targetUnitId
 
-    local nameText = ""
-    pcall(function()
-        nameText = api.Unit:GetUnitNameById(unitId) or ""
-    end)
-    if nameText == "" and type(info) == "table" then
-        nameText = tostring(info.name or info.unitName or "")
-    end
+    local static = getCachedUnitStatic(frame, unit, unitId, cfg.show_role, context.nowMs)
+    local info = static ~= nil and static.info or nil
+    local nameText = static ~= nil and tostring(static.name_text or "") or ""
     if nameText == "" then
         hideFrame(frame)
         return
     end
     nameText = trimText(nameText, cfg.name_max_chars)
 
-    local guildText = ""
-    if cfg.show_guild and type(info) == "table" then
-        guildText = tostring(info.expeditionName or "")
-    end
+    local guildText = static ~= nil and tostring(static.guild_text or "") or ""
     guildText = trimText(guildText, cfg.guild_max_chars)
     local displayGuildText = guildText ~= "" and ("<" .. guildText .. ">") or ""
     local layoutContent = {
@@ -582,10 +904,7 @@ local function updateOne(unit)
         frame.cache.style = fingerprint
         Layout.Apply(frame, cfg, layoutContent)
     end
-    local role = "dps"
-    if cfg.show_role then
-        role = Role.GetRoleForUnit(unit)
-    end
+    local role = (cfg.show_role and static ~= nil and static.role) or "dps"
 
     updateCachedText(frame, "name", frame.nameLabel, nameText)
     updateCachedText(frame, "guild", frame.guildLabel, displayGuildText)
@@ -608,6 +927,21 @@ local function updateOne(unit)
     setBorderVisible(frame.targetGlow, isCurrentTarget, TARGET_GLOW_COLOR)
     setBorderVisible(frame.targetTint, isCurrentTarget, TARGET_TINT_COLOR)
     Role.Apply(frame, cfg, role)
+    if shouldTrackCcUnit(unit) then
+        local ccEffects = nil
+        if unit == "player" and forceShowPlayerCc then
+            ccEffects = playerForcedCcEffects
+            frame.cache.cc_effects = ccEffects
+            frame.cache.cc_last_scan_ms = context.nowMs
+        else
+            ccEffects = getCachedCcEffects(frame, unit)
+        end
+        updateCcWidgets(frame, cfg, ccEffects, unit == "player" and forceShowPlayerCc)
+    else
+        frame.cache.cc_effects = {}
+        frame.cache.cc_last_scan_ms = 0
+        hideCcWidgets(frame)
+    end
 
     placeFrame(frame, cfg, screenX, screenY)
     frame.cache.active = true
@@ -633,9 +967,21 @@ function Bars.Update()
         Bars.Reset()
         return
     end
-    syncLayerMode(Shared.EnsureSettings())
+    local settings = Shared.EnsureSettings()
+    syncLayerMode(settings)
+    local cfg = Shared.GetStyleSettings()
+    local targetUnitId = nil
+    pcall(function()
+        targetUnitId = api.Unit:GetUnitId("target")
+    end)
+    local context = {
+        settings = settings,
+        cfg = cfg,
+        targetUnitId = targetUnitId,
+        nowMs = safeUiNowMs()
+    }
     for _, unit in ipairs(Bars.unit_keys) do
-        updateOne(unit)
+        updateOne(unit, context)
     end
 end
 Bars.UpdateData = Bars.Update

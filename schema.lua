@@ -83,6 +83,43 @@ Schema.TEXT_SLIDERS = {
     { key = "distance_offset_y", label = "Distance offset Y", min = -120, max = 120, factor = 1 }
 }
 
+Schema.CC_TOGGLES = {
+    { key = "show_cc", label = "Show crowd control icons" },
+    { key = "show_cc_timer", label = "Show CC timer" },
+    { key = "show_cc_secondary", label = "Show secondary CC icons" }
+}
+
+Schema.CC_CHOICES = {
+    {
+        key = "cc_anchor",
+        label = "CC anchor",
+        options = {
+            { value = "left", label = "Left" },
+            { value = "right", label = "Right" },
+            { value = "top", label = "Top" }
+        }
+    },
+    {
+        key = "cc_max_icons",
+        label = "Max icons",
+        options = {
+            { value = 1, label = "1" },
+            { value = 2, label = "2" },
+            { value = 3, label = "3" },
+            { value = 4, label = "4" }
+        }
+    }
+}
+
+Schema.CC_SLIDERS = {
+    { key = "cc_icon_size", label = "Primary icon size", min = 16, max = 48, factor = 1 },
+    { key = "cc_secondary_icon_size", label = "Secondary icon size", min = 10, max = 32, factor = 1 },
+    { key = "cc_timer_font_size", label = "Timer font size", min = 8, max = 24, factor = 1 },
+    { key = "cc_gap", label = "Icon gap", min = 0, max = 12, factor = 1 },
+    { key = "cc_offset_x", label = "CC offset X", min = -80, max = 80, factor = 1 },
+    { key = "cc_offset_y", label = "CC offset Y", min = -80, max = 80, factor = 1 }
+}
+
 Schema.COLOR_GROUPS = {
     { key = "hp_bar_color", label = "HP bar" },
     { key = "hostile_bar_color", label = "Hostile HP" },
