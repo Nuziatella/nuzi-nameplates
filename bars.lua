@@ -202,6 +202,17 @@ local function shouldTrackCcUnit(unit)
     return unit == "player" or unit == "target" or unit == "watchtarget"
 end
 
+local function normalizeUnitToken(unit)
+    if type(unit) ~= "string" then
+        return nil
+    end
+    local text = tostring(unit or "")
+    if text == "" then
+        return nil
+    end
+    return text
+end
+
 local function normalizeUnitId(unitId)
     if unitId == nil then
         return nil
@@ -891,6 +902,10 @@ local function hideFrame(frame)
 end
 
 local function getScreenPosition(unit, settings)
+    unit = normalizeUnitToken(unit)
+    if unit == nil then
+        return nil, nil, nil
+    end
     local screenX, screenY, screenZ = nil, nil, nil
     if settings.anchor_to_nametag and api.Unit.GetUnitScreenNameTagOffset ~= nil then
         pcall(function()
@@ -923,6 +938,10 @@ local function placeFrame(frame, cfg, screenX, screenY)
 end
 
 local function updateOne(unit, context)
+    unit = normalizeUnitToken(unit)
+    if unit == nil then
+        return
+    end
     local settings = context.settings
     local cfg = context.cfg
     local playerForcedCcEffects = nil
@@ -942,6 +961,7 @@ local function updateOne(unit, context)
     pcall(function()
         unitId = api.Unit:GetUnitId(unit)
     end)
+    unitId = normalizeUnitId(unitId)
     if unitId == nil then
         hideFrame(frame)
         return
