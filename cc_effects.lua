@@ -9,16 +9,18 @@ local CATEGORY_PRIORITY = {
     silence = 320,
     root = 240,
     slow = 160,
+    dot = 40,
     misc = 80
 }
 
 local EXACT_EFFECTS = {}
 
-local function register(category, names)
+local function register(category, names, dispellable)
     for _, name in ipairs(names or {}) do
         EXACT_EFFECTS[string.lower(tostring(name))] = {
             category = category,
-            priority = CATEGORY_PRIORITY[category] or 0
+            priority = CATEGORY_PRIORITY[category] or 0,
+            dispellable = dispellable == true
         }
     end
 end
@@ -52,14 +54,15 @@ register("hard", {
     "Shock",
     "Paralyzed",
     "Control"
-})
+}, true)
 
 register("silence", {
     "Silence",
+    "Silenced",
     "Eternal Silence",
     "Disarmed",
     "Mana Force"
-})
+}, true)
 
 register("root", {
     "Snare",
@@ -77,9 +80,10 @@ register("root", {
     "Phantasm's Wail",
     "Ecktom's Shackle",
     "Trap!",
+    "Hell Spear",
     "Lava Trap Explosion",
     "Wraith Rooted"
-})
+}, true)
 
 register("slow", {
     "Slow",
@@ -88,10 +92,22 @@ register("slow", {
     "Dizziness",
     "Poor Landing",
     "Dazed"
-})
+}, true)
+
+register("dot", {
+    "Bleed",
+    "Burn",
+    "Burning",
+    "Conflagration",
+    "Electric Shock",
+    "Poison",
+    "Poision",
+    "Toxic Shot",
+    "Enervate",
+    "Enervated"
+}, true)
 
 register("misc", {
-    "Hell Spear",
     "Splashdown Bubble",
     "Alkaran's Curse",
     "Ice",
@@ -99,24 +115,33 @@ register("misc", {
 })
 
 local KEYWORD_RULES = {
-    { pattern = "stun", category = "hard" },
-    { pattern = "sleep", category = "hard" },
-    { pattern = "fear", category = "hard" },
-    { pattern = "freeze", category = "hard" },
-    { pattern = "petrif", category = "hard" },
-    { pattern = "telekinesis", category = "hard" },
-    { pattern = "paraly", category = "hard" },
-    { pattern = "shock", category = "hard" },
-    { pattern = "silence", category = "silence" },
-    { pattern = "disarm", category = "silence" },
-    { pattern = "snare", category = "root" },
-    { pattern = "trap", category = "root" },
-    { pattern = "shackle", category = "root" },
-    { pattern = "root", category = "root" },
-    { pattern = "pull", category = "root" },
-    { pattern = "trip", category = "root" },
-    { pattern = "slow", category = "slow" },
-    { pattern = "daze", category = "slow" }
+    { pattern = "stun", category = "hard", dispellable = true },
+    { pattern = "sleep", category = "hard", dispellable = true },
+    { pattern = "fear", category = "hard", dispellable = true },
+    { pattern = "freeze", category = "hard", dispellable = true },
+    { pattern = "petrif", category = "hard", dispellable = true },
+    { pattern = "telekinesis", category = "hard", dispellable = true },
+    { pattern = "paraly", category = "hard", dispellable = true },
+    { pattern = "shock", category = "hard", dispellable = true },
+    { pattern = "silence", category = "silence", dispellable = true },
+    { pattern = "disarm", category = "silence", dispellable = true },
+    { pattern = "snare", category = "root", dispellable = true },
+    { pattern = "trap", category = "root", dispellable = true },
+    { pattern = "shackle", category = "root", dispellable = true },
+    { pattern = "root", category = "root", dispellable = true },
+    { pattern = "pull", category = "root", dispellable = true },
+    { pattern = "impale", category = "root", dispellable = true },
+    { pattern = "trip", category = "root", dispellable = true },
+    { pattern = "slow", category = "slow", dispellable = true },
+    { pattern = "daze", category = "slow", dispellable = true },
+    { pattern = "bleed", category = "dot", dispellable = true },
+    { pattern = "burn", category = "dot", dispellable = true },
+    { pattern = "conflagrat", category = "dot", dispellable = true },
+    { pattern = "electric shock", category = "dot", dispellable = true },
+    { pattern = "poison", category = "dot", dispellable = true },
+    { pattern = "poision", category = "dot", dispellable = true },
+    { pattern = "toxic", category = "dot", dispellable = true },
+    { pattern = "enervat", category = "dot", dispellable = true }
 }
 
 local function safeDebuffCount(unit)
@@ -176,15 +201,42 @@ local function classifyName(rawName)
         if string.find(key, rule.pattern, 1, true) ~= nil then
             return {
                 category = rule.category,
-                priority = CATEGORY_PRIORITY[rule.category] or 0
+                priority = CATEGORY_PRIORITY[rule.category] or 0,
+                dispellable = rule.dispellable == true
             }
         end
     end
     return nil
 end
 
+local function trimText(value)
+    local text = tostring(value or "")
+    text = string.gsub(text, "^%s+", "")
+    text = string.gsub(text, "%s+$", "")
+    return text
+end
+
+local function resolveDebuffName(debuff, tooltip)
+    local candidates = {
+        type(tooltip) == "table" and tooltip.name or nil,
+        type(tooltip) == "table" and tooltip.buffName or nil,
+        type(tooltip) == "table" and tooltip.title or nil,
+        type(debuff) == "table" and debuff.name or nil,
+        type(debuff) == "table" and debuff.buffName or nil,
+        type(debuff) == "table" and debuff.debuffName or nil,
+        type(debuff) == "table" and debuff.tooltipName or nil
+    }
+    for _, candidate in ipairs(candidates) do
+        local text = trimText(candidate)
+        if text ~= "" then
+            return text
+        end
+    end
+    return ""
+end
+
 local function buildEntry(debuff, tooltip)
-    local name = tostring((type(tooltip) == "table" and tooltip.name) or debuff.name or "")
+    local name = resolveDebuffName(debuff, tooltip)
     local match = classifyName(name)
     if match == nil then
         return nil
@@ -196,7 +248,8 @@ local function buildEntry(debuff, tooltip)
         path = tostring(debuff.path or ""),
         time_left_ms = timeLeft,
         category = match.category,
-        priority = tonumber(match.priority) or 0
+        priority = tonumber(match.priority) or 0,
+        dispellable = match.dispellable == true
     }
 end
 

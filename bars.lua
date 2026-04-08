@@ -27,6 +27,7 @@ local Bars = {
 }
 
 local applyLayerToFrame
+local setBorderVisible
 
 local VALID_UI_LAYERS = {
     background = true,
@@ -41,6 +42,8 @@ local VALID_UI_LAYERS = {
 
 local TARGET_GLOW_COLOR = { 255, 245, 0, 255 }
 local TARGET_TINT_COLOR = { 255, 245, 0, 170 }
+local CC_DISPEL_BORDER_COLOR = { 180, 72, 255, 255 }
+local CC_DISPEL_SLOT_COLOR = { 0.7059, 0.2824, 1, 1 }
 local BLOODLUST_BUFF_ID = 1482
 local HOSTILE_TEXT_COLOR = { 255, 244, 244, 255 }
 local NEUTRAL_TEXT_COLOR = { 40, 28, 0, 255 }
@@ -81,15 +84,59 @@ local function safeCreateCcIcon(id, parent)
     end
     Helpers.SafeClickable(icon, false)
     Helpers.SafeShow(icon, false)
-    if F_SLOT ~= nil and F_SLOT.ApplySlotSkin ~= nil and SLOT_STYLE ~= nil and icon.back ~= nil then
-        local style = SLOT_STYLE.DEFAULT or SLOT_STYLE.BUFF or SLOT_STYLE.ITEM
-        if style ~= nil then
-            pcall(function()
-                F_SLOT.ApplySlotSkin(icon, icon.back, style)
-            end)
-        end
+    if icon.back ~= nil then
+        pcall(function()
+            if F_SLOT ~= nil and F_SLOT.ApplySlotSkin ~= nil then
+                local style = DEBUFF or (SLOT_STYLE ~= nil and (SLOT_STYLE.BUFF or SLOT_STYLE.DEFAULT or SLOT_STYLE.ITEM)) or nil
+                if style ~= nil then
+                    F_SLOT.ApplySlotSkin(icon, icon.back, style)
+                end
+            end
+        end)
     end
     return icon
+end
+
+local function cloneSlotStyle(style)
+    if type(style) ~= "table" then
+        return style
+    end
+    local out = {}
+    for key, value in pairs(style) do
+        if type(value) == "table" then
+            local nested = {}
+            for nestedKey, nestedValue in pairs(value) do
+                nested[nestedKey] = nestedValue
+            end
+            out[key] = nested
+        else
+            out[key] = value
+        end
+    end
+    return out
+end
+
+local function getCcSlotStyle(isDispellable)
+    local base = DEBUFF or (SLOT_STYLE ~= nil and (SLOT_STYLE.BUFF or SLOT_STYLE.DEFAULT or SLOT_STYLE.ITEM)) or nil
+    if not isDispellable or type(base) ~= "table" then
+        return base
+    end
+    local styled = cloneSlotStyle(base)
+    styled.color = { CC_DISPEL_SLOT_COLOR[1], CC_DISPEL_SLOT_COLOR[2], CC_DISPEL_SLOT_COLOR[3], CC_DISPEL_SLOT_COLOR[4] }
+    return styled
+end
+
+local function applyCcIconStyle(icon, isDispellable)
+    if icon == nil or icon.back == nil or F_SLOT == nil or F_SLOT.ApplySlotSkin == nil then
+        return
+    end
+    local style = getCcSlotStyle(isDispellable == true)
+    if style == nil then
+        return
+    end
+    pcall(function()
+        F_SLOT.ApplySlotSkin(icon, icon.back, style)
+    end)
 end
 
 local function safeSetIconPath(icon, path)
@@ -334,6 +381,7 @@ local function updateCcWidgets(frame, cfg, effects, forceShow)
     anchorCcWidgets(frame, cfg)
 
     local primary = effects[1]
+    applyCcIconStyle(frame.ccPrimary, primary.dispellable == true)
     safeSetIconPath(frame.ccPrimary, primary.path)
     Helpers.SafeShow(frame.ccPrimary, true)
     if cfg.show_cc_timer ~= false and frame.ccPrimaryTimer ~= nil then
@@ -352,6 +400,7 @@ local function updateCcWidgets(frame, cfg, effects, forceShow)
     for index, entry in ipairs(frame.ccExtras or {}) do
         local effect = effects[index + 1]
         if index <= extraCount and effect ~= nil then
+            applyCcIconStyle(entry.icon, effect.dispellable == true)
             safeSetIconPath(entry.icon, effect.path)
             Helpers.SafeShow(entry.icon, true)
             if cfg.show_cc_timer ~= false and entry.timer ~= nil then
@@ -387,7 +436,7 @@ local function makeBorderSet(frame, rgba255)
     return border
 end
 
-local function setBorderVisible(border, enabled, rgba255)
+setBorderVisible = function(border, enabled, rgba255)
     if type(border) ~= "table" or type(border.parts) ~= "table" then
         return
     end
@@ -406,6 +455,51 @@ local function setBorderVisible(border, enabled, rgba255)
             end)
         end
     end
+end
+
+local function anchorBorderToWidget(border, widget)
+    if type(border) ~= "table" or type(border.parts) ~= "table" or widget == nil then
+        return
+    end
+    local thickness = 2
+    pcall(function()
+        local top = border.parts.top
+        local bottom = border.parts.bottom
+        local left = border.parts.left
+        local right = border.parts.right
+        if top ~= nil then
+            top:RemoveAllAnchors()
+            top:AddAnchor("TOPLEFT", widget, -2, -2)
+            top:AddAnchor("TOPRIGHT", widget, 2, -2)
+            if top.SetHeight ~= nil then
+                top:SetHeight(thickness)
+            end
+        end
+        if bottom ~= nil then
+            bottom:RemoveAllAnchors()
+            bottom:AddAnchor("BOTTOMLEFT", widget, -2, 2)
+            bottom:AddAnchor("BOTTOMRIGHT", widget, 2, 2)
+            if bottom.SetHeight ~= nil then
+                bottom:SetHeight(thickness)
+            end
+        end
+        if left ~= nil then
+            left:RemoveAllAnchors()
+            left:AddAnchor("TOPLEFT", widget, -2, -2)
+            left:AddAnchor("BOTTOMLEFT", widget, -2, 2)
+            if left.SetWidth ~= nil then
+                left:SetWidth(thickness)
+            end
+        end
+        if right ~= nil then
+            right:RemoveAllAnchors()
+            right:AddAnchor("TOPRIGHT", widget, 2, -2)
+            right:AddAnchor("BOTTOMRIGHT", widget, 2, 2)
+            if right.SetWidth ~= nil then
+                right:SetWidth(thickness)
+            end
+        end
+    end)
 end
 
 local function shouldShowUnit(unit, settings)

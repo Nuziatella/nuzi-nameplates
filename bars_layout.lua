@@ -275,9 +275,6 @@ function Layout.Apply(frame, cfg, content)
 
     Layout.AnchorTargetGlow(frame, showMpBar)
 
-    if frame.hpBar ~= nil and frame.hpBar.statusBar ~= nil then
-        Helpers.ApplyStatusBarColor(frame.hpBar.statusBar, Helpers.Color01(cfg.hp_bar_color, { 220, 46, 46, 255 }))
-    end
     if frame.mpBar ~= nil and frame.mpBar.statusBar ~= nil then
         Helpers.ApplyStatusBarColor(frame.mpBar.statusBar, Helpers.Color01(cfg.mp_bar_color, { 46, 122, 240, 255 }))
     end
