@@ -3,6 +3,7 @@ local Schema = {}
 Schema.GLOBAL_TOGGLES = {
     { key = "enabled", label = "Addon enabled" },
     { key = "anchor_to_nametag", label = "Anchor to name tag" },
+    { key = "click_target", label = "Click bars to target" },
     { key = "show_player", label = "Show player" },
     { key = "show_target", label = "Show target" },
     { key = "show_watchtarget", label = "Show watchtarget" },

@@ -235,7 +235,7 @@ local function resolveDebuffName(debuff, tooltip)
     return ""
 end
 
-local function buildEntry(debuff, tooltip)
+local function buildEntry(debuff, tooltip, scanIndex)
     local name = resolveDebuffName(debuff, tooltip)
     local match = classifyName(name)
     if match == nil then
@@ -249,11 +249,17 @@ local function buildEntry(debuff, tooltip)
         time_left_ms = timeLeft,
         category = match.category,
         priority = tonumber(match.priority) or 0,
-        dispellable = match.dispellable == true
+        dispellable = match.dispellable == true,
+        scan_index = tonumber(scanIndex) or 0
     }
 end
 
 local function compareEntries(a, b)
+    local aIndex = tonumber(a ~= nil and a.scan_index or 0) or 0
+    local bIndex = tonumber(b ~= nil and b.scan_index or 0) or 0
+    if aIndex ~= bIndex then
+        return aIndex > bIndex
+    end
     local aPriority = tonumber(a ~= nil and a.priority or 0) or 0
     local bPriority = tonumber(b ~= nil and b.priority or 0) or 0
     if aPriority ~= bPriority then
@@ -278,7 +284,7 @@ function CcEffects.ScanUnit(unit)
     for index = 1, count do
         local debuff = safeDebuff(unit, index)
         if debuff ~= nil and debuff.buff_id ~= nil then
-            local entry = buildEntry(debuff, getTooltip(debuff.buff_id))
+            local entry = buildEntry(debuff, getTooltip(debuff.buff_id), index)
             if entry ~= nil then
                 table.insert(effects, entry)
             end

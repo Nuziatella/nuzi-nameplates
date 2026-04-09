@@ -23,11 +23,15 @@ local Bars = {
     frames = {},
     unit_keys = {},
     target_unitframe = nil,
+    watchtarget_unitframe = nil,
+    targetoftarget_unitframe = nil,
     layer_mode = nil
 }
 
 local applyLayerToFrame
 local setBorderVisible
+local changeTarget
+local TARGET_DEBUG_LOGGING = false
 
 local VALID_UI_LAYERS = {
     background = true,
@@ -231,6 +235,162 @@ local function normalizeUnitId(unitId)
     return nil
 end
 
+local function getCurrentTargetUnitId()
+    if api == nil or api.Unit == nil or api.Unit.GetUnitId == nil then
+        return nil
+    end
+    local unitId = nil
+    pcall(function()
+        unitId = api.Unit:GetUnitId("target")
+    end)
+    return normalizeUnitId(unitId)
+end
+
+local function getStockTargetFrame()
+    local cached = Bars.target_unitframe
+    if cached ~= nil and cached.eventWindow ~= nil and cached.eventWindow.OnClick ~= nil then
+        return cached
+    end
+    if ADDON == nil or ADDON.GetContent == nil or UIC == nil or UIC.TARGET_UNITFRAME == nil then
+        Bars.target_unitframe = nil
+        return nil
+    end
+    local value = nil
+    pcall(function()
+        value = ADDON:GetContent(UIC.TARGET_UNITFRAME)
+    end)
+    if value ~= nil and value.eventWindow ~= nil and value.eventWindow.OnClick ~= nil then
+        Bars.target_unitframe = value
+        return value
+    end
+    Bars.target_unitframe = nil
+    return nil
+end
+
+local function getStockWatchtargetFrame()
+    local cached = Bars.watchtarget_unitframe
+    if cached ~= nil and cached.eventWindow ~= nil and cached.eventWindow.OnClick ~= nil then
+        return cached
+    end
+    if ADDON == nil or ADDON.GetContent == nil or UIC == nil or UIC.WATCH_TARGET_FRAME == nil then
+        Bars.watchtarget_unitframe = nil
+        return nil
+    end
+    local value = nil
+    pcall(function()
+        value = ADDON:GetContent(UIC.WATCH_TARGET_FRAME)
+    end)
+    if value ~= nil and value.eventWindow ~= nil and value.eventWindow.OnClick ~= nil then
+        Bars.watchtarget_unitframe = value
+        return value
+    end
+    Bars.watchtarget_unitframe = nil
+    return nil
+end
+
+local function getStockTargetOfTargetFrame()
+    local cached = Bars.targetoftarget_unitframe
+    if cached ~= nil and cached.eventWindow ~= nil and cached.eventWindow.OnClick ~= nil then
+        return cached
+    end
+    if ADDON == nil or ADDON.GetContent == nil or UIC == nil or UIC.TARGET_OF_TARGET_FRAME == nil then
+        Bars.targetoftarget_unitframe = nil
+        return nil
+    end
+    local value = nil
+    pcall(function()
+        value = ADDON:GetContent(UIC.TARGET_OF_TARGET_FRAME)
+    end)
+    if value ~= nil and value.eventWindow ~= nil and value.eventWindow.OnClick ~= nil then
+        Bars.targetoftarget_unitframe = value
+        return value
+    end
+    Bars.targetoftarget_unitframe = nil
+    return nil
+end
+
+local function getStockFrameForUnit(unit)
+    local key = tostring(unit or "")
+    if key == "watchtarget" then
+        return getStockWatchtargetFrame(), "watchtarget"
+    end
+    if key == "targetoftarget" or key == "target_of_target" or key == "targettarget" then
+        return getStockTargetOfTargetFrame(), "targettarget"
+    end
+    return getStockTargetFrame(), "target"
+end
+
+local function getStockFrameMethodCandidates(unit)
+    local key = tostring(unit or "")
+    if key == "watchtarget" then
+        return {
+            { method = "SetWatchTarget", args = { "watchtarget" }, label = "stock frame SetWatchTarget(watchtarget)" },
+            { method = "SetTarget", args = { "watchtarget" }, label = "stock frame SetTarget(watchtarget)" },
+            { method = "TargetChanged", args = { "watchtarget" }, label = "stock frame TargetChanged(watchtarget)" }
+        }
+    end
+    if key == "targetoftarget" or key == "target_of_target" or key == "targettarget" then
+        return {
+            { method = "SetTarget", args = { "targettarget" }, label = "stock frame SetTarget(targettarget)" },
+            { method = "TargetChanged", args = { "targettarget" }, label = "stock frame TargetChanged(targettarget)" }
+        }
+    end
+    return {
+        { method = "SetTarget", args = { "target" }, label = "stock frame SetTarget(target)" },
+        { method = "TargetChanged", args = { "target" }, label = "stock frame TargetChanged(target)" }
+    }
+end
+
+local function getTargetUnitCandidates(unit)
+    local key = tostring(unit or "")
+    if key == "" then
+        return {}
+    end
+    if key == "watchtarget" then
+        return { "watchtarget", "targettarget", "target_of_target", "targetoftarget" }
+    end
+    if key == "targetoftarget" or key == "target_of_target" or key == "targettarget" then
+        return { "targettarget", "target_of_target", "targetoftarget", "watchtarget" }
+    end
+    return { key }
+end
+
+local function logTargetDebug(message)
+    if not TARGET_DEBUG_LOGGING then
+        return
+    end
+    if api == nil or api.Log == nil or api.Log.Info == nil then
+        return
+    end
+    api.Log:Info("[Gharka Bars] " .. tostring(message or ""))
+end
+
+local function didTargetResolve(beforeTargetId, desiredUnitId)
+    local current = getCurrentTargetUnitId()
+    if desiredUnitId ~= nil then
+        return current == desiredUnitId, current
+    end
+    if beforeTargetId == nil then
+        return current ~= nil, current
+    end
+    return current ~= beforeTargetId, current
+end
+
+local function tryTargetCall(label, callback, beforeTargetId, desiredUnitId)
+    local ok, err = pcall(callback)
+    local changed, current = didTargetResolve(beforeTargetId, desiredUnitId)
+    if changed then
+        logTargetDebug(string.format("Target success via %s -> %s", tostring(label), tostring(current)))
+        return true
+    end
+    if not ok then
+        logTargetDebug(string.format("Target attempt failed via %s: %s", tostring(label), tostring(err)))
+    else
+        logTargetDebug(string.format("Target attempt no-op via %s (current=%s expected=%s)", tostring(label), tostring(current), tostring(desiredUnitId)))
+    end
+    return false
+end
+
 local function getUnitInfo(unit, unitId)
     local normalizedId = normalizeUnitId(unitId)
     local info = nil
@@ -340,6 +500,7 @@ local function anchorCcWidgets(frame, cfg)
     local anchor = tostring(cfg.cc_anchor or "left")
     local iconSize = clamp(cfg.cc_icon_size, 16, 48, 28)
     local secondarySize = clamp(cfg.cc_secondary_icon_size, 10, 32, 16)
+    secondarySize = math.min(secondarySize, math.max(10, iconSize - 4))
     local gap = clamp(cfg.cc_gap, 0, 12, 4)
     local offsetX = clamp(cfg.cc_offset_x, -80, 80, 0)
     local offsetY = clamp(cfg.cc_offset_y, -80, 80, 0)
@@ -371,10 +532,10 @@ local function anchorCcWidgets(frame, cfg)
         end
         setCcTimerStyle(entry.timer, secondaryTimerFont)
         Helpers.SafeAnchor(entry.timer, "CENTER", entry.icon, "CENTER", 0, 0)
-        if anchor == "top" then
+        if anchor == "right" or anchor == "top" then
             Helpers.SafeAnchor(entry.icon, "LEFT", previous, "RIGHT", gap, 0)
         else
-            Helpers.SafeAnchor(entry.icon, "BOTTOM", previous, "TOP", 0, -gap)
+            Helpers.SafeAnchor(entry.icon, "RIGHT", previous, "LEFT", -gap, 0)
         end
         previous = entry.icon
     end
@@ -635,11 +796,27 @@ local function ensureFrame(unit)
     pcall(function()
         eventWindow:AddAnchor("TOPLEFT", frame, 0, 0)
         eventWindow:AddAnchor("BOTTOMRIGHT", frame, 0, 0)
-        eventWindow:Show(false)
-        eventWindow:EnableDrag(false)
+        eventWindow:Show(true)
+        if eventWindow.EnablePick ~= nil then
+            eventWindow:EnablePick(true)
+        end
     end)
-    Helpers.SafeClickable(eventWindow, false)
+    Helpers.SafeClickable(eventWindow, true)
+    if eventWindow ~= nil and eventWindow.SetHandler ~= nil then
+        eventWindow:SetHandler("OnClick", function(_, button)
+            if button == "RightButton" or button == "MiddleButton" then
+                return
+            end
+            if frame.__ghb_click_target ~= true then
+                return
+            end
+            changeTarget(frame.__ghb_unit or unit, frame.__ghb_unit_id)
+        end)
+    end
     frame.eventWindow = eventWindow
+    frame.__ghb_unit = unit
+    frame.__ghb_unit_id = nil
+    frame.__ghb_click_target = true
     frame.cache = {}
     hideCcWidgets(frame)
     applyLayerToFrame(frame)
@@ -724,11 +901,199 @@ local function syncLayerMode(settings)
     end
     Bars.layer_mode = mode
     ensureUnitKeys()
-    if ADDON ~= nil and ADDON.GetContent ~= nil and UIC ~= nil then
-        pcall(function()
-            Bars.target_unitframe = ADDON:GetContent(UIC.TARGET_UNITFRAME)
-        end)
+    Bars.target_unitframe = getStockTargetFrame()
+    Bars.watchtarget_unitframe = getStockWatchtargetFrame()
+    Bars.targetoftarget_unitframe = getStockTargetOfTargetFrame()
+end
+
+changeTarget = function(unit, unitId)
+    if unit == nil and unitId == nil then
+        return
     end
+
+    local beforeTargetId = getCurrentTargetUnitId()
+    local desiredUnitId = normalizeUnitId(unitId)
+    local unitCandidates = getTargetUnitCandidates(unit)
+    local targetInfo = getUnitInfo(unit, desiredUnitId)
+    local targetName = getUnitName(desiredUnitId, targetInfo)
+    logTargetDebug(string.format("Click target request unit=%s unitId=%s current=%s", tostring(unit), tostring(desiredUnitId), tostring(beforeTargetId)))
+
+    if type(TargetUnit) == "function" then
+        for _, candidate in ipairs(unitCandidates) do
+            if tryTargetCall("TargetUnit(" .. tostring(candidate) .. ")", function()
+                TargetUnit(candidate)
+            end, beforeTargetId, desiredUnitId) then
+                return
+            end
+        end
+        if unitId ~= nil then
+            if tryTargetCall("TargetUnit(unitId)", function()
+                TargetUnit(unitId)
+            end, beforeTargetId, desiredUnitId) then
+                return
+            end
+        end
+    end
+
+    if api ~= nil and api.Unit ~= nil and type(api.Unit.TargetUnit) == "function" then
+        for _, candidate in ipairs(unitCandidates) do
+            if tryTargetCall("api.Unit.TargetUnit(" .. tostring(candidate) .. ")", function()
+                api.Unit.TargetUnit(candidate)
+            end, beforeTargetId, desiredUnitId) then
+                return
+            end
+            if tryTargetCall("api.Unit:TargetUnit(" .. tostring(candidate) .. ")", function()
+                api.Unit:TargetUnit(candidate)
+            end, beforeTargetId, desiredUnitId) then
+                return
+            end
+        end
+        if unitId ~= nil then
+            if tryTargetCall("api.Unit.TargetUnit(unitId)", function()
+                api.Unit.TargetUnit(unitId)
+            end, beforeTargetId, desiredUnitId) then
+                return
+            end
+            if tryTargetCall("api.Unit:TargetUnit(unitId)", function()
+                api.Unit:TargetUnit(unitId)
+            end, beforeTargetId, desiredUnitId) then
+                return
+            end
+        end
+    end
+
+    if type(X2Unit) == "table" and type(X2Unit.TargetUnit) == "function" then
+        for _, candidate in ipairs(unitCandidates) do
+            if tryTargetCall("X2Unit.TargetUnit(" .. tostring(candidate) .. ")", function()
+                X2Unit.TargetUnit(candidate)
+            end, beforeTargetId, desiredUnitId) then
+                return
+            end
+            if tryTargetCall("X2Unit:TargetUnit(" .. tostring(candidate) .. ")", function()
+                X2Unit:TargetUnit(candidate)
+            end, beforeTargetId, desiredUnitId) then
+                return
+            end
+        end
+        if desiredUnitId ~= nil then
+            if tryTargetCall("X2Unit.TargetUnit(unitId)", function()
+                X2Unit.TargetUnit(desiredUnitId)
+            end, beforeTargetId, desiredUnitId) then
+                return
+            end
+            if tryTargetCall("X2Unit:TargetUnit(unitId)", function()
+                X2Unit:TargetUnit(desiredUnitId)
+            end, beforeTargetId, desiredUnitId) then
+                return
+            end
+        end
+    end
+
+    if targetName ~= nil and targetName ~= "" then
+        if type(TargetUnit) == "function" then
+            if tryTargetCall("TargetUnit(name)", function()
+                TargetUnit(targetName)
+            end, beforeTargetId, desiredUnitId) then
+                return
+            end
+        end
+        if api ~= nil and api.Unit ~= nil and type(api.Unit.TargetUnit) == "function" then
+            if tryTargetCall("api.Unit.TargetUnit(name)", function()
+                api.Unit.TargetUnit(targetName)
+            end, beforeTargetId, desiredUnitId) then
+                return
+            end
+            if tryTargetCall("api.Unit:TargetUnit(name)", function()
+                api.Unit:TargetUnit(targetName)
+            end, beforeTargetId, desiredUnitId) then
+                return
+            end
+        end
+        if type(X2Unit) == "table" and type(X2Unit.TargetUnit) == "function" then
+            if tryTargetCall("X2Unit.TargetUnit(name)", function()
+                X2Unit.TargetUnit(targetName)
+            end, beforeTargetId, desiredUnitId) then
+                return
+            end
+            if tryTargetCall("X2Unit:TargetUnit(name)", function()
+                X2Unit:TargetUnit(targetName)
+            end, beforeTargetId, desiredUnitId) then
+                return
+            end
+        end
+    end
+
+    local tu, stockUnit = getStockFrameForUnit(unit)
+    if tu == nil or tu.eventWindow == nil or tu.eventWindow.OnClick == nil then
+        logTargetDebug("Matching stock frame unavailable")
+        return
+    end
+
+    for _, candidate in ipairs(getStockFrameMethodCandidates(unit)) do
+        local method = candidate.method
+        if type(tu[method]) == "function" then
+            if tryTargetCall(tostring(candidate.label), function()
+                tu[method](tu, unpack(candidate.args))
+                if tu.UpdateAll ~= nil then
+                    tu:UpdateAll()
+                end
+            end, beforeTargetId, desiredUnitId) then
+                return
+            end
+        end
+    end
+
+    if tryTargetCall("stock target frame(native)", function()
+        tu.eventWindow:OnClick("LeftButton")
+        if tu.ChangedTarget ~= nil then
+            tu:ChangedTarget()
+        end
+        if tu.UpdateAll ~= nil then
+            tu:UpdateAll()
+        end
+    end, beforeTargetId, desiredUnitId) then
+        return
+    end
+
+    if tryTargetCall("stock target frame(unit)", function()
+        if tu.target ~= nil then
+            tu.target = stockUnit or unit
+        end
+        tu.eventWindow:OnClick("LeftButton")
+        if tu.target ~= nil then
+            tu.target = stockUnit or "target"
+        end
+        if tu.ChangedTarget ~= nil then
+            tu:ChangedTarget()
+        end
+        if tu.UpdateAll ~= nil then
+            tu:UpdateAll()
+        end
+    end, beforeTargetId, desiredUnitId) then
+        return
+    end
+
+    if desiredUnitId ~= nil then
+        if tryTargetCall("stock target frame(unitId)", function()
+            if tu.target ~= nil then
+                tu.target = desiredUnitId
+            end
+            tu.eventWindow:OnClick("LeftButton")
+            if tu.target ~= nil then
+                tu.target = stockUnit or "target"
+            end
+            if tu.ChangedTarget ~= nil then
+                tu:ChangedTarget()
+            end
+            if tu.UpdateAll ~= nil then
+                tu:UpdateAll()
+            end
+        end, beforeTargetId, desiredUnitId) then
+            return
+        end
+    end
+
+    logTargetDebug("All targeting paths failed")
 end
 
 local function updateCachedText(frame, key, widget, text)
@@ -1028,6 +1393,11 @@ local function updateOne(unit, context)
     updateStatusBar(frame, "hp", frame.hpBar, hp, hpMax)
     updateStatusBar(frame, "mp", frame.mpBar, mp, mpMax)
     updateHpBarColor(frame, unit, cfg, info)
+    frame.__ghb_unit = unit
+    frame.__ghb_unit_id = unitId
+    frame.__ghb_click_target = settings.click_target and true or false
+    Helpers.SafeClickable(frame.eventWindow, frame.__ghb_click_target)
+    Helpers.SafeShow(frame.eventWindow, frame.__ghb_click_target)
     Helpers.SafeShow(frame.nameLabel, cfg.show_name ~= false)
     Helpers.SafeShow(frame.guildLabel, cfg.show_guild and guildText ~= "")
     Helpers.SafeShow(frame.roleLabel, false)
@@ -1069,11 +1439,9 @@ function Bars.Init()
     end
     ensureUnitKeys()
     Bars.layer_mode = currentLayerMode(Shared.EnsureSettings())
-    if ADDON ~= nil and ADDON.GetContent ~= nil and UIC ~= nil then
-        pcall(function()
-            Bars.target_unitframe = ADDON:GetContent(UIC.TARGET_UNITFRAME)
-        end)
-    end
+    Bars.target_unitframe = getStockTargetFrame()
+    Bars.watchtarget_unitframe = getStockWatchtargetFrame()
+    Bars.targetoftarget_unitframe = getStockTargetOfTargetFrame()
 end
 
 function Bars.Update()
@@ -1083,6 +1451,15 @@ function Bars.Update()
     end
     local settings = Shared.EnsureSettings()
     syncLayerMode(settings)
+    if Bars.target_unitframe == nil then
+        Bars.target_unitframe = getStockTargetFrame()
+    end
+    if Bars.watchtarget_unitframe == nil then
+        Bars.watchtarget_unitframe = getStockWatchtargetFrame()
+    end
+    if Bars.targetoftarget_unitframe == nil then
+        Bars.targetoftarget_unitframe = getStockTargetOfTargetFrame()
+    end
     local cfg = Shared.GetStyleSettings()
     local targetUnitId = nil
     pcall(function()

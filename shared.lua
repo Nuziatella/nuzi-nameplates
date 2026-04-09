@@ -5,7 +5,7 @@ local Shared = {}
 Shared.CONSTANTS = {
     ADDON_ID = "gharka-bars",
     TITLE = "Gharka Bars",
-    VERSION = "1.5.17",
+    VERSION = "1.5.34",
     BUTTON_ID = "gharkaBarsSettingsButton",
     WINDOW_ID = "gharkaBarsSettingsWindow",
     SETTINGS_FILE_PATH = "gharka-bars/settings.txt",
@@ -80,6 +80,7 @@ end
 Shared.DEFAULT_SETTINGS = {
     enabled = true,
     anchor_to_nametag = true,
+    click_target = true,
     show_player = false,
     show_target = true,
     show_watchtarget = true,
