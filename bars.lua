@@ -56,7 +56,13 @@ local HOSTILE_TEXT_COLOR = { 255, 244, 244, 255 }
 local NEUTRAL_TEXT_COLOR = { 40, 28, 0, 255 }
 local CC_SCAN_INTERVAL_MS = 250
 local CC_EXTRA_ICON_COUNT = 3
-local UNIT_STATIC_REFRESH_MS = 2000
+local HOT_UNIT_STATIC_REFRESH_MS = 0
+local BULK_UNIT_STATIC_REFRESH_MS = 8000
+local BULK_UNIT_STATIC_JITTER_MS = 2400
+local BULK_POSITION_INTERVAL_SMALL_MS = 16
+local BULK_POSITION_INTERVAL_MEDIUM_MS = 24
+local BULK_POSITION_INTERVAL_LARGE_MS = 33
+local BULK_POSITION_INTERVAL_XL_MS = 50
 local CC_CATEGORY_STYLE_KEYS = {
     hard = "show_cc_hard",
     silence = "show_cc_silence",
@@ -191,14 +197,18 @@ local function setCcTimerStyle(label, fontSize)
     if label == nil then
         return
     end
+    local wantFont = tonumber(fontSize) or 11
+    local wantKey = tostring(wantFont)
+    if label.__ghb_cc_timer_style == wantKey then
+        return
+    end
     pcall(function()
-        if label.SetExtent ~= nil then
-            label:SetExtent(56, (tonumber(fontSize) or 11) + 6)
-        end
+        Helpers.SafeSetExtent(label, 56, wantFont + 6)
         if label.style ~= nil and label.style.SetFontSize ~= nil then
-            label.style:SetFontSize(fontSize)
+            label.style:SetFontSize(wantFont)
         end
     end)
+    label.__ghb_cc_timer_style = wantKey
 end
 
 local function hideCcWidgets(frame)
@@ -226,6 +236,33 @@ local function normalizeUnitToken(unit)
         return nil
     end
     return text
+end
+
+local function isHotUnit(unit)
+    return unit == "target" or unit == "player" or unit == "watchtarget"
+end
+
+local function getUnitHash(unit)
+    local text = tostring(unit or "")
+    local hash = 0
+    for index = 1, string.len(text) do
+        hash = ((hash * 33) + string.byte(text, index)) % 104729
+    end
+    return hash
+end
+
+local function getStaticRefreshIntervalMs(unit)
+    if isHotUnit(unit) then
+        return HOT_UNIT_STATIC_REFRESH_MS
+    end
+    return BULK_UNIT_STATIC_REFRESH_MS
+end
+
+local function getStaticRefreshJitterMs(unit)
+    if isHotUnit(unit) then
+        return 0
+    end
+    return getUnitHash(unit) % BULK_UNIT_STATIC_JITTER_MS
 end
 
 local function normalizeUnitId(unitId)
@@ -464,13 +501,20 @@ local function getCachedUnitStatic(frame, unit, unitId, includeRole, nowMs)
     end
     local cached = frame.cache.unit_static
     local refreshNeeded = true
+    local includeRoleBool = includeRole and true or false
     if type(cached) == "table" and cached.unit_id == unitId then
         refreshNeeded = false
-        local last = tonumber(cached.last_refresh_ms) or 0
-        if nowMs > 0 and last > 0 and (nowMs - last) >= UNIT_STATIC_REFRESH_MS then
+        local nextRefreshMs = tonumber(cached.next_refresh_ms) or 0
+        if nowMs > 0 and nextRefreshMs > 0 and nowMs >= nextRefreshMs then
             refreshNeeded = true
         end
-        if includeRole and cached.role == nil then
+        if includeRoleBool and cached.role == nil then
+            refreshNeeded = true
+        end
+        if cached.info == nil or tostring(cached.name_text or "") == "" then
+            refreshNeeded = true
+        end
+        if includeRoleBool and tostring(cached.class_name or "") == "" then
             refreshNeeded = true
         end
     end
@@ -479,15 +523,20 @@ local function getCachedUnitStatic(frame, unit, unitId, includeRole, nowMs)
     end
 
     local info = getUnitInfo(unit, unitId)
-    local role = nil
-    local className = nil
-    if includeRole then
+    local role = type(cached) == "table" and cached.role or nil
+    local className = type(cached) == "table" and cached.class_name or nil
+    if includeRoleBool and role == nil then
         role, className = Role.GetRoleForUnit(unit)
+    end
+    local nextRefreshMs = 0
+    if nowMs > 0 and getStaticRefreshIntervalMs(unit) > 0 then
+        nextRefreshMs = nowMs + getStaticRefreshIntervalMs(unit) + getStaticRefreshJitterMs(unit)
     end
 
     cached = {
         unit_id = unitId,
         last_refresh_ms = nowMs,
+        next_refresh_ms = nextRefreshMs,
         info = info,
         name_text = getUnitName(unit, unitId, info),
         guild_text = type(info) == "table" and tostring(info.expeditionName or info.guildName or info.guild or "") or "",
@@ -565,11 +614,21 @@ local function anchorCcWidgets(frame, cfg)
     local timerFont = clamp(cfg.cc_timer_font_size, 8, 24, 11)
     local secondaryTimerFont = math.max(8, timerFont - 2)
     local host = frame.hpBar or frame
-    pcall(function()
-        if frame.ccPrimary.SetExtent ~= nil then
-            frame.ccPrimary:SetExtent(iconSize, iconSize)
-        end
-    end)
+    local layoutKey = table.concat({
+        tostring(anchor),
+        tostring(iconSize),
+        tostring(secondarySize),
+        tostring(gap),
+        tostring(offsetX),
+        tostring(offsetY),
+        tostring(timerFont),
+        tostring(secondaryTimerFont),
+        tostring(host)
+    }, "|")
+    if frame.cache ~= nil and frame.cache.cc_layout_key == layoutKey then
+        return
+    end
+    Helpers.SafeSetExtent(frame.ccPrimary, iconSize, iconSize)
     setCcTimerStyle(frame.ccPrimaryTimer, timerFont)
     Helpers.SafeAnchor(frame.ccPrimaryTimer, "CENTER", frame.ccPrimary, "CENTER", 0, 0)
 
@@ -583,11 +642,7 @@ local function anchorCcWidgets(frame, cfg)
 
     local previous = frame.ccPrimary
     for _, entry in ipairs(frame.ccExtras or {}) do
-        if entry.icon ~= nil and entry.icon.SetExtent ~= nil then
-            pcall(function()
-                entry.icon:SetExtent(secondarySize, secondarySize)
-            end)
-        end
+        Helpers.SafeSetExtent(entry.icon, secondarySize, secondarySize)
         setCcTimerStyle(entry.timer, secondaryTimerFont)
         Helpers.SafeAnchor(entry.timer, "CENTER", entry.icon, "CENTER", 0, 0)
         if anchor == "right" or anchor == "top" then
@@ -596,6 +651,9 @@ local function anchorCcWidgets(frame, cfg)
             Helpers.SafeAnchor(entry.icon, "RIGHT", previous, "LEFT", -gap, 0)
         end
         previous = entry.icon
+    end
+    if frame.cache ~= nil then
+        frame.cache.cc_layout_key = layoutKey
     end
 end
 
@@ -672,6 +730,16 @@ setBorderVisible = function(border, enabled, rgba255)
         return
     end
     local color = Helpers.Color01(rgba255 or border.rgba, { 255, 255, 255, 255 })
+    local colorKey = table.concat({
+        tostring(color[1] or ""),
+        tostring(color[2] or ""),
+        tostring(color[3] or ""),
+        tostring(color[4] or "")
+    }, ",")
+    local wantVisible = enabled and true or false
+    if border.__ghb_visible == wantVisible and border.__ghb_color_key == colorKey then
+        return
+    end
     for _, drawable in pairs(border.parts) do
         if drawable ~= nil then
             pcall(function()
@@ -686,6 +754,8 @@ setBorderVisible = function(border, enabled, rgba255)
             end)
         end
     end
+    border.__ghb_visible = wantVisible
+    border.__ghb_color_key = colorKey
 end
 
 local function anchorBorderToWidget(border, widget)
@@ -775,6 +845,20 @@ local function rebuildActiveBulkUnitKeys()
             table.insert(Bars.active_bulk_unit_keys, unit)
         end
     end
+end
+
+local function getBulkPositionIntervalMs()
+    local activeCount = #Bars.active_bulk_unit_keys
+    if activeCount >= 36 then
+        return BULK_POSITION_INTERVAL_XL_MS
+    end
+    if activeCount >= 24 then
+        return BULK_POSITION_INTERVAL_LARGE_MS
+    end
+    if activeCount >= 12 then
+        return BULK_POSITION_INTERVAL_MEDIUM_MS
+    end
+    return BULK_POSITION_INTERVAL_SMALL_MS
 end
 
 local function ensureFrame(unit)
@@ -917,12 +1001,17 @@ local function applyLayerToWidget(widget)
     if widget == nil or widget.SetUILayer == nil then
         return
     end
-    if Bars.layer_mode == nil or Bars.layer_mode == "default" then
+    local mode = Bars.layer_mode or "default"
+    if mode == "default" then
+        return
+    end
+    if widget.__ghb_ui_layer == mode then
         return
     end
     pcall(function()
-        widget:SetUILayer(Bars.layer_mode)
+        widget:SetUILayer(mode)
     end)
+    widget.__ghb_ui_layer = mode
 end
 
 applyLayerToFrame = function(frame)
@@ -990,7 +1079,7 @@ changeTarget = function(unit, unitId)
     local desiredUnitId = normalizeUnitId(unitId)
     local unitCandidates = getTargetUnitCandidates(unit)
     local targetInfo = getUnitInfo(unit, desiredUnitId)
-    local targetName = getUnitName(desiredUnitId, targetInfo)
+    local targetName = getUnitName(unit, desiredUnitId, targetInfo)
     logTargetDebug(string.format("Click target request unit=%s unitId=%s current=%s", tostring(unit), tostring(desiredUnitId), tostring(beforeTargetId)))
 
     if type(TargetUnit) == "function" then
@@ -1330,6 +1419,9 @@ local function hideFrame(frame)
     if frame == nil then
         return
     end
+    if frame.cache ~= nil and frame.cache.active == false and frame.cache.shown == false then
+        return
+    end
     if frame.cache ~= nil then
         frame.cache.active = false
         frame.cache.shown = false
@@ -1351,14 +1443,10 @@ local function getScreenPosition(frame, unit, settings)
         pcall(function()
             screenX, screenY, screenZ = api.Unit:GetUnitScreenNameTagOffset(unit)
         end)
-        return screenX, screenY, screenZ
     end
-    pcall(function()
-        screenX, screenY, screenZ = api.Unit:GetUnitScreenPosition(unit)
-    end)
-    if (screenX == nil or screenY == nil) and api.Unit.GetUnitScreenNameTagOffset ~= nil then
+    if screenX == nil or screenY == nil then
         pcall(function()
-            screenX, screenY, screenZ = api.Unit:GetUnitScreenNameTagOffset(unit)
+            screenX, screenY, screenZ = api.Unit:GetUnitScreenPosition(unit)
         end)
     end
     return screenX, screenY, screenZ
@@ -1405,7 +1493,6 @@ local function updateOne(unit, context)
     end
 
     local frame = ensureFrame(unit)
-    applyLayerToFrame(frame)
     local unitId = nil
     pcall(function()
         unitId = api.Unit:GetUnitId(unit)
@@ -1423,12 +1510,6 @@ local function updateOne(unit, context)
         end)
     end
     if type(distance) == "number" and distance > clamp(cfg.max_distance, 10, 300, 130) then
-        hideFrame(frame)
-        return
-    end
-
-    local screenX, screenY, screenZ = getScreenPosition(frame, unit, settings)
-    if screenX == nil or screenY == nil or (screenZ ~= nil and screenZ < 0) then
         hideFrame(frame)
         return
     end
@@ -1488,9 +1569,11 @@ local function updateOne(unit, context)
     Helpers.SafeShow(frame.hpValueLabel, cfg.show_hp_text ~= false)
     Helpers.SafeShow(frame.mpValueLabel, cfg.show_mp_text and cfg.show_mp_bar and mpMax > 0)
     Helpers.SafeShow(frame.distanceLabel, cfg.show_distance and type(distance) == "number")
-    Helpers.SafeShow(frame.mpBar, cfg.show_mp_bar and clamp(cfg.mp_height, 0, 26, 5) > 0 and mpMax > 0)
-    if Layout ~= nil and Layout.AnchorTargetGlow ~= nil then
-        Layout.AnchorTargetGlow(frame, cfg.show_mp_bar and clamp(cfg.mp_height, 0, 26, 5) > 0 and mpMax > 0)
+    local showMpBar = cfg.show_mp_bar and clamp(cfg.mp_height, 0, 26, 5) > 0 and mpMax > 0
+    Helpers.SafeShow(frame.mpBar, showMpBar)
+    if Layout ~= nil and Layout.AnchorTargetGlow ~= nil and frame.cache.target_glow_mp ~= showMpBar then
+        Layout.AnchorTargetGlow(frame, showMpBar)
+        frame.cache.target_glow_mp = showMpBar
     end
     setBorderVisible(frame.targetGlow, isCurrentTarget, TARGET_GLOW_COLOR)
     setBorderVisible(frame.targetTint, isCurrentTarget, TARGET_TINT_COLOR)
@@ -1511,10 +1594,22 @@ local function updateOne(unit, context)
         hideCcWidgets(frame)
     end
 
-    placeFrame(frame, cfg, screenX, screenY)
     frame.cache.active = true
-    frame.cache.shown = true
-    Helpers.SafeShow(frame, true)
+    if context.include_position ~= false then
+        local screenX, screenY, screenZ = getScreenPosition(frame, unit, settings)
+        if screenX == nil or screenY == nil or (screenZ ~= nil and screenZ < 0) then
+            hideFrame(frame)
+            return
+        end
+        placeFrame(frame, cfg, screenX, screenY)
+        frame.cache.shown = true
+        Helpers.SafeShow(frame, true)
+    elseif frame.cache.posX ~= nil and frame.cache.posY ~= nil then
+        frame.cache.shown = true
+        Helpers.SafeShow(frame, true)
+    else
+        frame.cache.shown = false
+    end
 end
 
 function Bars.Init()
@@ -1533,11 +1628,13 @@ local function buildContext(settings, cfg)
     pcall(function()
         targetUnitId = api.Unit:GetUnitId("target")
     end)
+    targetUnitId = normalizeUnitId(targetUnitId)
     return {
         settings = settings,
         cfg = cfg,
         targetUnitId = targetUnitId,
-        nowMs = safeUiNowMs()
+        nowMs = safeUiNowMs(),
+        include_position = true
     }
 end
 
@@ -1600,7 +1697,9 @@ function Bars.UpdateHotData()
     if settings == nil then
         return
     end
-    updateUnits(Bars.hot_unit_keys, buildContext(settings, cfg))
+    local context = buildContext(settings, cfg)
+    context.include_position = false
+    updateUnits(Bars.hot_unit_keys, context)
 end
 
 function Bars.UpdateBulkData()
@@ -1608,7 +1707,9 @@ function Bars.UpdateBulkData()
     if settings == nil then
         return
     end
-    updateUnits(Bars.bulk_unit_keys, buildContext(settings, cfg))
+    local context = buildContext(settings, cfg)
+    context.include_position = false
+    updateUnits(Bars.bulk_unit_keys, context)
     rebuildActiveBulkUnitKeys()
 end
 
@@ -1630,9 +1731,17 @@ function Bars.UpdateBulkPositions()
     updatePositionsForUnits(Bars.active_bulk_unit_keys, settings, cfg)
 end
 
+function Bars.GetBulkPositionIntervalMs()
+    return getBulkPositionIntervalMs()
+end
+
 function Bars.UpdatePositions()
-    Bars.UpdateHotPositions()
-    Bars.UpdateBulkPositions()
+    local settings, cfg = prepareUpdateState()
+    if settings == nil then
+        return
+    end
+    updatePositionsForUnits(Bars.hot_unit_keys, settings, cfg)
+    updatePositionsForUnits(Bars.active_bulk_unit_keys, settings, cfg)
 end
 
 function Bars.Reset()
@@ -1657,6 +1766,8 @@ function Bars.Unload()
     Bars.bulk_unit_keys = {}
     Bars.active_bulk_unit_keys = {}
     Bars.target_unitframe = nil
+    Bars.watchtarget_unitframe = nil
+    Bars.targetoftarget_unitframe = nil
 end
 
 return Bars

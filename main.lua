@@ -26,7 +26,8 @@ local addon = {
 
 local hotDataElapsedMs = 0
 local bulkDataElapsedMs = 0
-local positionElapsedMs = 0
+local hotPositionElapsedMs = 0
+local bulkPositionElapsedMs = 0
 
 local function logInfo(message)
     if api.Log ~= nil and api.Log.Info ~= nil then
@@ -90,10 +91,19 @@ local function onUpdate(dt)
     end
     hotDataElapsedMs = hotDataElapsedMs + delta
     bulkDataElapsedMs = bulkDataElapsedMs + delta
-    positionElapsedMs = positionElapsedMs + delta
-    if positionElapsedMs >= 16 then
-        positionElapsedMs = 0
-        Bars.UpdatePositions()
+    hotPositionElapsedMs = hotPositionElapsedMs + delta
+    bulkPositionElapsedMs = bulkPositionElapsedMs + delta
+    if hotPositionElapsedMs >= 16 then
+        hotPositionElapsedMs = 0
+        Bars.UpdateHotPositions()
+    end
+    local bulkPositionIntervalMs = 16
+    if Bars ~= nil and Bars.GetBulkPositionIntervalMs ~= nil then
+        bulkPositionIntervalMs = tonumber(Bars.GetBulkPositionIntervalMs()) or 16
+    end
+    if bulkPositionElapsedMs >= bulkPositionIntervalMs then
+        bulkPositionElapsedMs = 0
+        Bars.UpdateBulkPositions()
     end
     if hotDataElapsedMs >= 100 then
         hotDataElapsedMs = 0
@@ -108,7 +118,8 @@ end
 local function onUiReloaded()
     hotDataElapsedMs = 0
     bulkDataElapsedMs = 0
-    positionElapsedMs = 0
+    hotPositionElapsedMs = 0
+    bulkPositionElapsedMs = 0
     Compat.Probe(true)
     Bars.Reset()
     SettingsUi.Unload()

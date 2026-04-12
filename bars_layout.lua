@@ -146,6 +146,7 @@ function Layout.Apply(frame, cfg, content)
     local guildText = tostring(content.guild_text or "")
 
     local roleReserved = showRole and (roleFs + 8) or 0
+    local guildReserved = showGuild and (guildFs + 8) or 0
     local topLineHeight = 0
     if showName or showRole then
         topLineHeight = math.max(showName and nameFs or 0, showRole and roleFs or 0) + 4
@@ -182,6 +183,7 @@ function Layout.Apply(frame, cfg, content)
 
     if frame.cache ~= nil then
         frame.cache.frame_width = frameWidth
+        frame.cache.target_glow_mp = showMpBar and true or false
     end
     pcall(function()
         frame:SetExtent(frameWidth, totalHeight)

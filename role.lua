@@ -167,6 +167,19 @@ local function setPart(drawable, frame, x, y, width, height, color)
         return
     end
     local rgba = Helpers.Color01(color, { 255, 255, 255, 255 })
+    local key = table.concat({
+        tostring(x or ""),
+        tostring(y or ""),
+        tostring(width or ""),
+        tostring(height or ""),
+        tostring(rgba[1] or ""),
+        tostring(rgba[2] or ""),
+        tostring(rgba[3] or ""),
+        tostring(rgba[4] or "")
+    }, "|")
+    if drawable.__ghb_role_key == key and drawable.__ghb_role_visible == true then
+        return
+    end
     pcall(function()
         if drawable.RemoveAllAnchors ~= nil then
             drawable:RemoveAllAnchors()
@@ -184,10 +197,15 @@ local function setPart(drawable, frame, x, y, width, height, color)
             drawable:SetVisible(true)
         end
     end)
+    drawable.__ghb_role_key = key
+    drawable.__ghb_role_visible = true
 end
 
 function Role.Hide(frame)
     if frame == nil then
+        return
+    end
+    if frame.__ghb_role_hidden == true then
         return
     end
     for _, key in ipairs({ "roleIconA", "roleIconB", "roleIconC", "roleIconD" }) do
@@ -196,8 +214,11 @@ function Role.Hide(frame)
             pcall(function()
                 drawable:SetVisible(false)
             end)
+            drawable.__ghb_role_visible = false
         end
     end
+    frame.__ghb_role_hidden = true
+    frame.__ghb_role_sig = nil
 end
 
 function Role.Apply(frame, cfg, role)
@@ -210,6 +231,19 @@ function Role.Apply(frame, cfg, role)
     local x = 3 + Shared.Clamp(cfg.role_offset_x, -80, 80, 0)
     local y = Shared.Clamp(cfg.role_offset_y, -80, 80, 0)
     local color = Role.GetRoleColor(role)
+    local sig = table.concat({
+        tostring(role or ""),
+        tostring(size),
+        tostring(x),
+        tostring(y),
+        tostring(color[1] or ""),
+        tostring(color[2] or ""),
+        tostring(color[3] or ""),
+        tostring(color[4] or "")
+    }, "|")
+    if frame.__ghb_role_sig == sig and frame.__ghb_role_hidden ~= true then
+        return
+    end
     local a = ensurePart(frame, "roleIconA")
     local b = ensurePart(frame, "roleIconB")
     local c = ensurePart(frame, "roleIconC")
@@ -243,6 +277,8 @@ function Role.Apply(frame, cfg, role)
         setPart(b, frame, x + blade + 2, y - 1, blade, size + 2, color)
         setPart(c, frame, x + ((blade + 2) * 2), y + 2, blade, math.max(4, size - 2), color)
     end
+    frame.__ghb_role_hidden = false
+    frame.__ghb_role_sig = sig
 end
 
 return Role
