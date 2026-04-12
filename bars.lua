@@ -238,6 +238,17 @@ local function normalizeUnitToken(unit)
     return text
 end
 
+local function normalizeTargetToken(unit)
+    local token = normalizeUnitToken(unit)
+    if token == nil then
+        return nil
+    end
+    if token == "targetoftarget" or token == "target_of_target" then
+        return "targettarget"
+    end
+    return token
+end
+
 local function isHotUnit(unit)
     return unit == "target" or unit == "player" or unit == "watchtarget"
 end
@@ -390,8 +401,11 @@ local function getStockFrameMethodCandidates(unit)
 end
 
 local function getTargetUnitCandidates(unit)
-    local key = tostring(unit or "")
+    local key = normalizeTargetToken(unit)
     if key == "" then
+        return {}
+    end
+    if key == nil then
         return {}
     end
     if key == "watchtarget" then
@@ -1077,10 +1091,15 @@ changeTarget = function(unit, unitId)
 
     local beforeTargetId = getCurrentTargetUnitId()
     local desiredUnitId = normalizeUnitId(unitId)
-    local unitCandidates = getTargetUnitCandidates(unit)
-    local targetInfo = getUnitInfo(unit, desiredUnitId)
-    local targetName = getUnitName(unit, desiredUnitId, targetInfo)
-    logTargetDebug(string.format("Click target request unit=%s unitId=%s current=%s", tostring(unit), tostring(desiredUnitId), tostring(beforeTargetId)))
+    local normalizedUnit = normalizeTargetToken(unit)
+    local unitCandidates = getTargetUnitCandidates(normalizedUnit)
+    local targetInfo = getUnitInfo(normalizedUnit, desiredUnitId)
+    local targetName = getUnitName(normalizedUnit, desiredUnitId, targetInfo)
+    logTargetDebug(string.format("Click target request unit=%s unitId=%s current=%s", tostring(normalizedUnit), tostring(desiredUnitId), tostring(beforeTargetId)))
+
+    if normalizedUnit == nil and desiredUnitId == nil and (targetName == nil or targetName == "") then
+        return
+    end
 
     if type(TargetUnit) == "function" then
         for _, candidate in ipairs(unitCandidates) do
@@ -1090,9 +1109,9 @@ changeTarget = function(unit, unitId)
                 return
             end
         end
-        if unitId ~= nil then
+        if desiredUnitId ~= nil then
             if tryTargetCall("TargetUnit(unitId)", function()
-                TargetUnit(unitId)
+                TargetUnit(desiredUnitId)
             end, beforeTargetId, desiredUnitId) then
                 return
             end
@@ -1112,14 +1131,14 @@ changeTarget = function(unit, unitId)
                 return
             end
         end
-        if unitId ~= nil then
+        if desiredUnitId ~= nil then
             if tryTargetCall("api.Unit.TargetUnit(unitId)", function()
-                api.Unit.TargetUnit(unitId)
+                api.Unit.TargetUnit(desiredUnitId)
             end, beforeTargetId, desiredUnitId) then
                 return
             end
             if tryTargetCall("api.Unit:TargetUnit(unitId)", function()
-                api.Unit:TargetUnit(unitId)
+                api.Unit:TargetUnit(desiredUnitId)
             end, beforeTargetId, desiredUnitId) then
                 return
             end
@@ -1187,7 +1206,7 @@ changeTarget = function(unit, unitId)
         end
     end
 
-    local tu, stockUnit = getStockFrameForUnit(unit)
+    local tu, stockUnit = getStockFrameForUnit(normalizedUnit)
     if tu == nil or tu.eventWindow == nil or tu.eventWindow.OnClick == nil then
         logTargetDebug("Matching stock frame unavailable")
         return

@@ -33,6 +33,15 @@ local SettingsUi = {
 local BASE_WINDOW_WIDTH = 760
 local BASE_WINDOW_HEIGHT = 900
 
+local function safeFree(widget)
+    if widget == nil or api.Interface == nil or api.Interface.Free == nil then
+        return
+    end
+    pcall(function()
+        api.Interface:Free(widget)
+    end)
+end
+
 local function safeShow(widget, show)
     if widget ~= nil and widget.Show ~= nil then
         pcall(function()
@@ -404,6 +413,39 @@ local function buildContext()
     }
 end
 
+local function collectWidgetRefs(value, seen, out)
+    if value == nil then
+        return
+    end
+    if type(value) ~= "table" then
+        return
+    end
+    if value.Show ~= nil or value.SetHandler ~= nil or value.AddAnchor ~= nil or value.RemoveAllAnchors ~= nil then
+        if not seen[value] then
+            seen[value] = true
+            table.insert(out, value)
+        end
+        return
+    end
+    for _, nested in pairs(value) do
+        collectWidgetRefs(nested, seen, out)
+    end
+end
+
+local function freeTrackedWidgets()
+    local seen = {}
+    local widgets = {}
+    collectWidgetRefs(SettingsUi.controls, seen, widgets)
+    collectWidgetRefs(SettingsUi.page_widgets, seen, widgets)
+    collectWidgetRefs(SettingsUi.color_group_widgets, seen, widgets)
+
+    for _, widget in ipairs(widgets) do
+        if widget ~= SettingsUi.window and widget ~= SettingsUi.button then
+            safeFree(widget)
+        end
+    end
+end
+
 local function ensureWindow()
     if SettingsUi.window ~= nil then
         return
@@ -576,16 +618,9 @@ function SettingsUi.Toggle()
 end
 
 function SettingsUi.Unload()
-    if SettingsUi.window ~= nil and api.Interface ~= nil and api.Interface.Free ~= nil then
-        pcall(function()
-            api.Interface:Free(SettingsUi.window)
-        end)
-    end
-    if SettingsUi.button ~= nil and api.Interface ~= nil and api.Interface.Free ~= nil then
-        pcall(function()
-            api.Interface:Free(SettingsUi.button)
-        end)
-    end
+    freeTrackedWidgets()
+    safeFree(SettingsUi.window)
+    safeFree(SettingsUi.button)
     SettingsUi.button = nil
     SettingsUi.window = nil
     SettingsUi.controls = {}
