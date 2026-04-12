@@ -229,16 +229,25 @@ function Pages.BuildCcPage(ctx, wnd)
     ctx.addPageWidget("cc", ctx.createLabel("ghbCcTitle", wnd, "Crowd Control", 24, 98, 16, 220))
     ctx.addPageWidget("cc", ctx.createLabel("ghbCcHint", wnd, "Attach CC icons and timers directly to the custom bar frames instead of using a separate floating widget.", 24, 122, 12, 700))
 
+    local toggleLeftX = 24
+    local toggleRightX = 380
     local toggleY = 170
-    for index, item in ipairs(ctx.Schema.CC_TOGGLES or {}) do
-        local cb = ctx.createCheckbox("ghbCcToggle" .. item.key, wnd, item.label, 24, toggleY + ((index - 1) * 40), 280)
+    local toggleGap = 38
+    local ccToggles = ctx.Schema.CC_TOGGLES or {}
+    local splitIndex = math.max(1, math.ceil(#ccToggles / 2))
+    for index, item in ipairs(ccToggles) do
+        local isRightColumn = index > splitIndex
+        local colX = isRightColumn and toggleRightX or toggleLeftX
+        local rowIndex = isRightColumn and (index - splitIndex) or index
+        local cb = ctx.createCheckbox("ghbCcToggle" .. item.key, wnd, item.label, colX, toggleY + ((rowIndex - 1) * toggleGap), 280)
         ctx.addPageWidget("cc", cb.button)
         ctx.addPageWidget("cc", cb.label)
         ctx.SettingsUi.controls["cc_toggle_" .. item.key] = cb
         bindStyleToggle(ctx, item, cb)
     end
 
-    local choiceY = 320
+    local toggleRows = math.max(splitIndex, #ccToggles - splitIndex)
+    local choiceY = toggleY + (toggleRows * toggleGap) + 18
     for _, item in ipairs(ctx.Schema.CC_CHOICES or {}) do
         local label, btn = ctx.createChoiceRow("ghbCcChoice" .. item.key, wnd, item.label, 24, choiceY, 190)
         ctx.addPageWidget("cc", label)
@@ -248,11 +257,12 @@ function Pages.BuildCcPage(ctx, wnd)
         choiceY = choiceY + 38
     end
 
-    ctx.addPageWidget("cc", ctx.createLabel("ghbCcSliders", wnd, "Placement and Size", 24, 420, 15, 260))
+    local sliderTitleY = choiceY + 24
+    ctx.addPageWidget("cc", ctx.createLabel("ghbCcSliders", wnd, "Placement and Size", 24, sliderTitleY, 15, 260))
     eachSlider(ctx.Schema.CC_SLIDERS or {}, function(index, item)
         local colX = index <= 3 and 24 or 500
         local localIndex = index <= 3 and index or (index - 3)
-        local rowY = 454 + ((localIndex - 1) * 38)
+        local rowY = sliderTitleY + 34 + ((localIndex - 1) * 38)
         local label, slider, value = ctx.createSlider("ghbCcSlider" .. item.key, wnd, item.label, colX, rowY, item.min, item.max)
         ctx.addPageWidget("cc", label)
         ctx.addPageWidget("cc", slider)

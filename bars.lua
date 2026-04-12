@@ -22,6 +22,9 @@ local CcEffects = loadModule("cc_effects")
 local Bars = {
     frames = {},
     unit_keys = {},
+    hot_unit_keys = {},
+    bulk_unit_keys = {},
+    active_bulk_unit_keys = {},
     target_unitframe = nil,
     watchtarget_unitframe = nil,
     targetoftarget_unitframe = nil,
@@ -54,6 +57,14 @@ local NEUTRAL_TEXT_COLOR = { 40, 28, 0, 255 }
 local CC_SCAN_INTERVAL_MS = 250
 local CC_EXTRA_ICON_COUNT = 3
 local UNIT_STATIC_REFRESH_MS = 2000
+local CC_CATEGORY_STYLE_KEYS = {
+    hard = "show_cc_hard",
+    silence = "show_cc_silence",
+    root = "show_cc_root",
+    slow = "show_cc_slow",
+    dot = "show_cc_dot",
+    misc = "show_cc_misc"
+}
 local PLAYER_CC_VISIBILITY_CACHE = {
     last_scan_ms = 0,
     effects = {}
@@ -391,18 +402,36 @@ local function tryTargetCall(label, callback, beforeTargetId, desiredUnitId)
     return false
 end
 
+local function getGuildNameFromInfo(info)
+    if type(info) ~= "table" then
+        return ""
+    end
+    return tostring(info.expeditionName or info.guildName or info.guild or "")
+end
+
 local function getUnitInfo(unit, unitId)
     local normalizedId = normalizeUnitId(unitId)
+    local liveInfo = nil
+    if api.Unit.UnitInfo ~= nil then
+        pcall(function()
+            liveInfo = api.Unit:UnitInfo(unit)
+        end)
+    end
     local info = nil
-    if normalizedId ~= nil then
+    if normalizedId ~= nil and (type(liveInfo) ~= "table" or getGuildNameFromInfo(liveInfo) == "") then
         pcall(function()
             info = api.Unit:GetUnitInfoById(normalizedId)
         end)
     end
-    if type(info) ~= "table" and api.Unit.UnitInfo ~= nil then
-        pcall(function()
-            info = api.Unit:UnitInfo(unit)
-        end)
+    if type(liveInfo) == "table" then
+        if type(info) == "table" then
+            for key, value in pairs(info) do
+                if liveInfo[key] == nil then
+                    liveInfo[key] = value
+                end
+            end
+        end
+        return liveInfo
     end
     if type(info) ~= "table" then
         return nil
@@ -410,16 +439,21 @@ local function getUnitInfo(unit, unitId)
     return info
 end
 
-local function getUnitName(unitId, info)
-    local normalizedId = normalizeUnitId(unitId)
+local function getUnitName(unit, unitId, info)
     local nameText = ""
-    if normalizedId ~= nil then
+    if api.Unit.UnitName ~= nil then
         pcall(function()
-            nameText = api.Unit:GetUnitNameById(normalizedId) or ""
+            nameText = api.Unit:UnitName(unit) or ""
         end)
     end
     if nameText == "" and type(info) == "table" then
         nameText = tostring(info.name or info.unitName or "")
+    end
+    local normalizedId = normalizeUnitId(unitId)
+    if nameText == "" and normalizedId ~= nil then
+        pcall(function()
+            nameText = api.Unit:GetUnitNameById(normalizedId) or ""
+        end)
     end
     return nameText
 end
@@ -455,8 +489,8 @@ local function getCachedUnitStatic(frame, unit, unitId, includeRole, nowMs)
         unit_id = unitId,
         last_refresh_ms = nowMs,
         info = info,
-        name_text = getUnitName(unitId, info),
-        guild_text = type(info) == "table" and tostring(info.expeditionName or "") or "",
+        name_text = getUnitName(unit, unitId, info),
+        guild_text = type(info) == "table" and tostring(info.expeditionName or info.guildName or info.guild or "") or "",
         role = role,
         class_name = className
     }
@@ -477,6 +511,30 @@ local function getCachedCcEffects(frame, unit)
     frame.cache.cc_effects = effects
     frame.cache.cc_last_scan_ms = now
     return effects
+end
+
+local function isCcCategoryEnabled(cfg, category)
+    if type(cfg) ~= "table" then
+        return true
+    end
+    local key = CC_CATEGORY_STYLE_KEYS[tostring(category or "")]
+    if key == nil then
+        return true
+    end
+    return cfg[key] ~= false
+end
+
+local function filterCcEffects(cfg, effects)
+    if type(effects) ~= "table" or #effects == 0 then
+        return {}
+    end
+    local filtered = {}
+    for _, effect in ipairs(effects) do
+        if type(effect) == "table" and isCcCategoryEnabled(cfg, effect.category) then
+            table.insert(filtered, effect)
+        end
+    end
+    return filtered
 end
 
 local function getPlayerVisibilityCcEffects(nowMs)
@@ -545,6 +603,7 @@ local function updateCcWidgets(frame, cfg, effects, forceShow)
     if frame == nil or frame.ccPrimary == nil then
         return
     end
+    effects = filterCcEffects(cfg, effects)
     if ((not forceShow) and cfg.show_cc == false) or type(effects) ~= "table" or #effects == 0 then
         hideCcWidgets(frame)
         return
@@ -693,13 +752,29 @@ local function ensureUnitKeys()
     if #Bars.unit_keys > 0 then
         return
     end
-    table.insert(Bars.unit_keys, "target")
-    table.insert(Bars.unit_keys, "player")
-    for i = 1, 50 do
-        table.insert(Bars.unit_keys, string.format("team%d", i))
+    table.insert(Bars.hot_unit_keys, "target")
+    table.insert(Bars.hot_unit_keys, "player")
+    table.insert(Bars.hot_unit_keys, "watchtarget")
+    for _, unit in ipairs(Bars.hot_unit_keys) do
+        table.insert(Bars.unit_keys, unit)
     end
-    table.insert(Bars.unit_keys, "watchtarget")
+    for i = 1, 50 do
+        local unit = string.format("team%d", i)
+        table.insert(Bars.bulk_unit_keys, unit)
+        table.insert(Bars.unit_keys, unit)
+    end
+    table.insert(Bars.bulk_unit_keys, "playerpet1")
     table.insert(Bars.unit_keys, "playerpet1")
+end
+
+local function rebuildActiveBulkUnitKeys()
+    Bars.active_bulk_unit_keys = {}
+    for _, unit in ipairs(Bars.bulk_unit_keys) do
+        local frame = Bars.frames[unit]
+        if frame ~= nil and frame.cache ~= nil and frame.cache.active then
+            table.insert(Bars.active_bulk_unit_keys, unit)
+        end
+    end
 end
 
 local function ensureFrame(unit)
@@ -1266,7 +1341,7 @@ local function hideFrame(frame)
     Helpers.SafeShow(frame, false)
 end
 
-local function getScreenPosition(unit, settings)
+local function getScreenPosition(frame, unit, settings)
     unit = normalizeUnitToken(unit)
     if unit == nil then
         return nil, nil, nil
@@ -1276,19 +1351,28 @@ local function getScreenPosition(unit, settings)
         pcall(function()
             screenX, screenY, screenZ = api.Unit:GetUnitScreenNameTagOffset(unit)
         end)
+        return screenX, screenY, screenZ
     end
-    if screenX == nil or screenY == nil then
+    pcall(function()
+        screenX, screenY, screenZ = api.Unit:GetUnitScreenPosition(unit)
+    end)
+    if (screenX == nil or screenY == nil) and api.Unit.GetUnitScreenNameTagOffset ~= nil then
         pcall(function()
-            screenX, screenY, screenZ = api.Unit:GetUnitScreenPosition(unit)
+            screenX, screenY, screenZ = api.Unit:GetUnitScreenNameTagOffset(unit)
         end)
     end
     return screenX, screenY, screenZ
 end
 
 local function placeFrame(frame, cfg, screenX, screenY)
+    if frame == nil or frame.cache == nil then
+        return
+    end
     local width = tonumber(frame.cache.frame_width) or clamp(cfg.width, 80, 320, 156)
-    local posX = math.ceil(screenX) + clamp(cfg.x_offset, -500, 500, 0) - math.floor(width / 2)
-    local posY = math.ceil(screenY) - clamp(cfg.y_offset, -200, 200, 24)
+    local roundedX = math.floor((tonumber(screenX) or 0) + 0.5)
+    local roundedY = math.floor((tonumber(screenY) or 0) + 0.5)
+    local posX = roundedX + clamp(cfg.x_offset, -500, 500, 0) - math.floor(width / 2)
+    local posY = roundedY - clamp(cfg.y_offset, -200, 200, 24)
     if frame.cache.shown and frame.cache.posX ~= nil and frame.cache.posY ~= nil then
         if math.abs(frame.cache.posX - posX) <= 1 and math.abs(frame.cache.posY - posY) <= 1 then
             return
@@ -1312,7 +1396,7 @@ local function updateOne(unit, context)
     local playerForcedCcEffects = nil
     local forceShowPlayerCc = false
     if unit == "player" then
-        playerForcedCcEffects = getPlayerVisibilityCcEffects(context.nowMs)
+        playerForcedCcEffects = filterCcEffects(cfg, getPlayerVisibilityCcEffects(context.nowMs))
         forceShowPlayerCc = type(playerForcedCcEffects) == "table" and #playerForcedCcEffects > 0
     end
     if not (settings.enabled and (shouldShowUnit(unit, settings) or forceShowPlayerCc)) then
@@ -1332,12 +1416,6 @@ local function updateOne(unit, context)
         return
     end
 
-    local screenX, screenY, screenZ = getScreenPosition(unit, settings)
-    if screenX == nil or screenY == nil or (screenZ ~= nil and screenZ < 0) then
-        hideFrame(frame)
-        return
-    end
-
     local distance = nil
     if api.Unit.UnitDistance ~= nil then
         pcall(function()
@@ -1345,6 +1423,12 @@ local function updateOne(unit, context)
         end)
     end
     if type(distance) == "number" and distance > clamp(cfg.max_distance, 10, 300, 130) then
+        hideFrame(frame)
+        return
+    end
+
+    local screenX, screenY, screenZ = getScreenPosition(frame, unit, settings)
+    if screenX == nil or screenY == nil or (screenZ ~= nil and screenZ < 0) then
         hideFrame(frame)
         return
     end
@@ -1444,13 +1528,36 @@ function Bars.Init()
     Bars.targetoftarget_unitframe = getStockTargetOfTargetFrame()
 end
 
-function Bars.Update()
+local function buildContext(settings, cfg)
+    local targetUnitId = nil
+    pcall(function()
+        targetUnitId = api.Unit:GetUnitId("target")
+    end)
+    return {
+        settings = settings,
+        cfg = cfg,
+        targetUnitId = targetUnitId,
+        nowMs = safeUiNowMs()
+    }
+end
+
+local function updateUnits(unitKeys, context)
+    for _, unit in ipairs(unitKeys) do
+        updateOne(unit, context)
+    end
+end
+
+local function prepareUpdateState()
     if Compat ~= nil and not Compat.IsRenderable() then
         Bars.Reset()
-        return
+        return nil, nil
     end
     local settings = Shared.EnsureSettings()
     syncLayerMode(settings)
+    if not settings.enabled then
+        Bars.Reset()
+        return nil, nil
+    end
     if Bars.target_unitframe == nil then
         Bars.target_unitframe = getStockTargetFrame()
     end
@@ -1460,38 +1567,14 @@ function Bars.Update()
     if Bars.targetoftarget_unitframe == nil then
         Bars.targetoftarget_unitframe = getStockTargetOfTargetFrame()
     end
-    local cfg = Shared.GetStyleSettings()
-    local targetUnitId = nil
-    pcall(function()
-        targetUnitId = api.Unit:GetUnitId("target")
-    end)
-    local context = {
-        settings = settings,
-        cfg = cfg,
-        targetUnitId = targetUnitId,
-        nowMs = safeUiNowMs()
-    }
-    for _, unit in ipairs(Bars.unit_keys) do
-        updateOne(unit, context)
-    end
+    return settings, Shared.GetStyleSettings()
 end
-Bars.UpdateData = Bars.Update
-function Bars.UpdatePositions()
-    local settings = Shared.EnsureSettings()
-    if Compat ~= nil and not Compat.IsRenderable() then
-        Bars.Reset()
-        return
-    end
-    syncLayerMode(settings)
-    if not settings.enabled then
-        Bars.Reset()
-        return
-    end
-    local cfg = Shared.GetStyleSettings()
-    for _, unit in ipairs(Bars.unit_keys) do
+
+local function updatePositionsForUnits(unitKeys, settings, cfg)
+    for _, unit in ipairs(unitKeys) do
         local frame = Bars.frames[unit]
         if frame ~= nil and frame.cache ~= nil and frame.cache.active then
-            local screenX, screenY, screenZ = getScreenPosition(unit, settings)
+            local screenX, screenY, screenZ = getScreenPosition(frame, unit, settings)
             if screenX == nil or screenY == nil or (screenZ ~= nil and screenZ < 0) then
                 hideFrame(frame)
             else
@@ -1503,7 +1586,57 @@ function Bars.UpdatePositions()
     end
 end
 
+function Bars.Update()
+    local settings, cfg = prepareUpdateState()
+    if settings == nil then
+        return
+    end
+    updateUnits(Bars.unit_keys, buildContext(settings, cfg))
+    rebuildActiveBulkUnitKeys()
+end
+
+function Bars.UpdateHotData()
+    local settings, cfg = prepareUpdateState()
+    if settings == nil then
+        return
+    end
+    updateUnits(Bars.hot_unit_keys, buildContext(settings, cfg))
+end
+
+function Bars.UpdateBulkData()
+    local settings, cfg = prepareUpdateState()
+    if settings == nil then
+        return
+    end
+    updateUnits(Bars.bulk_unit_keys, buildContext(settings, cfg))
+    rebuildActiveBulkUnitKeys()
+end
+
+Bars.UpdateData = Bars.Update
+
+function Bars.UpdateHotPositions()
+    local settings, cfg = prepareUpdateState()
+    if settings == nil then
+        return
+    end
+    updatePositionsForUnits(Bars.hot_unit_keys, settings, cfg)
+end
+
+function Bars.UpdateBulkPositions()
+    local settings, cfg = prepareUpdateState()
+    if settings == nil then
+        return
+    end
+    updatePositionsForUnits(Bars.active_bulk_unit_keys, settings, cfg)
+end
+
+function Bars.UpdatePositions()
+    Bars.UpdateHotPositions()
+    Bars.UpdateBulkPositions()
+end
+
 function Bars.Reset()
+    Bars.active_bulk_unit_keys = {}
     for _, frame in pairs(Bars.frames) do
         hideFrame(frame)
     end
@@ -1520,6 +1653,9 @@ function Bars.Unload()
     end
     Bars.frames = {}
     Bars.unit_keys = {}
+    Bars.hot_unit_keys = {}
+    Bars.bulk_unit_keys = {}
+    Bars.active_bulk_unit_keys = {}
     Bars.target_unitframe = nil
 end
 

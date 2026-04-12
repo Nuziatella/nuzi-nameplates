@@ -20,11 +20,12 @@ local Compat = loadModule("compat")
 local addon = {
     name = "Gharka Bars",
     author = "Nuzi",
-    version = "1.5.34",
+    version = "1.5.39",
     desc = "Overhead raid bars"
 }
 
-local dataElapsedMs = 0
+local hotDataElapsedMs = 0
+local bulkDataElapsedMs = 0
 local positionElapsedMs = 0
 
 local function logInfo(message)
@@ -87,20 +88,26 @@ local function onUpdate(dt)
     if delta < 5 then
         delta = delta * 1000
     end
-    dataElapsedMs = dataElapsedMs + delta
+    hotDataElapsedMs = hotDataElapsedMs + delta
+    bulkDataElapsedMs = bulkDataElapsedMs + delta
     positionElapsedMs = positionElapsedMs + delta
     if positionElapsedMs >= 16 then
         positionElapsedMs = 0
         Bars.UpdatePositions()
     end
-    if dataElapsedMs >= 100 then
-        dataElapsedMs = 0
-        Bars.UpdateData()
+    if hotDataElapsedMs >= 100 then
+        hotDataElapsedMs = 0
+        Bars.UpdateHotData()
+    end
+    if bulkDataElapsedMs >= 150 then
+        bulkDataElapsedMs = 0
+        Bars.UpdateBulkData()
     end
 end
 
 local function onUiReloaded()
-    dataElapsedMs = 0
+    hotDataElapsedMs = 0
+    bulkDataElapsedMs = 0
     positionElapsedMs = 0
     Compat.Probe(true)
     Bars.Reset()

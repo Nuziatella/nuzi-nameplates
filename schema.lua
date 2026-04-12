@@ -87,7 +87,13 @@ Schema.TEXT_SLIDERS = {
 Schema.CC_TOGGLES = {
     { key = "show_cc", label = "Show crowd control icons" },
     { key = "show_cc_timer", label = "Show CC timer" },
-    { key = "show_cc_secondary", label = "Show secondary CC icons" }
+    { key = "show_cc_secondary", label = "Show secondary CC icons" },
+    { key = "show_cc_hard", label = "Show hard CC" },
+    { key = "show_cc_silence", label = "Show silence / disarm" },
+    { key = "show_cc_root", label = "Show root / snare" },
+    { key = "show_cc_slow", label = "Show slows" },
+    { key = "show_cc_dot", label = "Show DoTs" },
+    { key = "show_cc_misc", label = "Show misc CC" }
 }
 
 Schema.CC_CHOICES = {
