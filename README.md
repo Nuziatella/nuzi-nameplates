@@ -78,4 +78,4 @@ Recent updates focused on reducing redundant widget work and smoothing raid-time
 
 ## Version
 
-Current version: `1.5.39`
+Current version: `1.5.40`
