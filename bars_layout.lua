@@ -38,7 +38,7 @@ function Layout.StyleKey(cfg, content)
         tostring(cfg.alpha_pct), tostring(cfg.bg_alpha_pct), tostring(cfg.max_distance),
         tostring(cfg.name_font_size), tostring(cfg.guild_font_size), tostring(cfg.role_font_size),
         tostring(cfg.value_font_size), tostring(cfg.distance_font_size), tostring(cfg.value_mode),
-        tostring(cfg.name_layout), tostring(cfg.x_offset), tostring(cfg.y_offset),
+        tostring(cfg.name_layout), tostring(cfg.cluster_spacing_mode), tostring(cfg.x_offset), tostring(cfg.y_offset),
         tostring(cfg.name_offset_x), tostring(cfg.name_offset_y), tostring(cfg.guild_offset_x),
         tostring(cfg.guild_offset_y), tostring(cfg.role_offset_x), tostring(cfg.role_offset_y),
         tostring(cfg.value_offset_x), tostring(cfg.value_offset_y),
@@ -183,6 +183,7 @@ function Layout.Apply(frame, cfg, content)
 
     if frame.cache ~= nil then
         frame.cache.frame_width = frameWidth
+        frame.cache.frame_height = totalHeight
         frame.cache.target_glow_mp = showMpBar and true or false
     end
     pcall(function()
@@ -234,9 +235,8 @@ function Layout.Apply(frame, cfg, content)
     if frame.eventWindow ~= nil and frame.hpBar ~= nil then
         pcall(function()
             frame.eventWindow:RemoveAllAnchors()
-            frame.eventWindow:AddAnchor("TOPLEFT", frame.hpBar, "TOPLEFT", 0, 0)
-            frame.eventWindow:AddAnchor("BOTTOMRIGHT", frame.hpBar, "BOTTOMRIGHT", 0, 0)
-            frame.eventWindow:Show(true)
+            frame.eventWindow:AddAnchor("TOPLEFT", frame.hpBar, "TOPLEFT", -3, -3)
+            frame.eventWindow:AddAnchor("BOTTOMRIGHT", frame.hpBar, "BOTTOMRIGHT", 3, 3)
         end)
     end
     if frame.mpBar ~= nil then
@@ -260,7 +260,9 @@ function Layout.Apply(frame, cfg, content)
     )
 
     Helpers.SafeSetBg(frame, cfg.show_background ~= false, clamp(cfg.bg_alpha_pct, 0, 100, 72) / 100)
-    Helpers.SafeSetAlpha(frame, clamp(cfg.alpha_pct, 10, 100, 100) / 100)
+    if frame.cache ~= nil then
+        frame.cache.base_alpha = clamp(cfg.alpha_pct, 10, 100, 100) / 100
+    end
 
     if frame.bg ~= nil then
         pcall(function()

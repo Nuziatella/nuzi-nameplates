@@ -1,81 +1,75 @@
 # Gharka Bars
 
+![Gharka Bars](icon.png)
+
 Stock nameplates are fine right up until you actually need them.
 
-`Gharka Bars` replaces the chaos with clean overhead raid bars that stay readable, clickable, and useful when the screen turns into a small civil war.
+`Gharka Bars` keeps the important information where you can actually use it:
 
-## What It Does
-
-- replaces stock-style overhead clutter with custom HP and MP bars
-- keeps bars anchored to the correct unit
+- replaces stock overhead clutter with cleaner HP and MP bars
 - supports `player`, `target`, `watchtarget`, and raid members
-- shows role markers, distance text, and target highlighting
-- tracks CC icons and timers directly on the bar
-- includes an in-game `GB` settings window with layout, text, color, and CC controls
-- supports local settings backups and import from the latest backup
+- shows role icons, distance text, target highlighting, and CC timers
+- includes a launcher icon and in-game settings window
+- supports layout presets, named profile saves, and local backups
 
 ## Install
 
-1. Drop the `gharka-bars` folder into your AAClassic `Addon` directory.
+1. Install via Addon Manager.
 2. Make sure the addon is enabled in game.
-3. Reload the UI if needed.
-4. Click the `GB` button to open settings.
+3. Click the launcher icon to open or close settings.
 
-Saved settings live in `gharka-bars/.data` so normal addon updates do not stomp your configuration.
+Saved data lives in `gharka-bars/.data` so settings, profiles, backups, and launcher position survive updates.
 
 ## Quick Start
 
-1. Click `GB`.
-2. Enable the addon if it is not already on.
-3. Open the `Layout`, `Text`, `CC`, and `Colors` pages to tune the bar style.
-4. Save a backup once you have a setup you like.
+1. Click the launcher icon to open `Gharka Bars`.
+2. Use `General`, `Layout`, `Text`, `CC`, and `Colors` to tune the bars.
+3. Pick a preset if you want a quick baseline before fine-tuning.
+4. Save a named profile or backup once the layout feels right.
 
-If you break your masterpiece, `Import` pulls the latest backup back in without requiring interpretive dance.
+This is basically the addon version of telling stock nameplates to get their act together.
 
 ## How To
 
-### Basic Use
+### Bars
 
-- `player`, `target`, and `watchtarget` bars update aggressively for accuracy
-- raid bars use a lighter background schedule to keep overhead down
-- clicking a bar targets that unit when the client exposes a valid targeting path
+The bars are built to stay useful when fights get crowded.
+
+You can use them for:
+
+- fast `player`, `target`, and `watchtarget` tracking
+- raid member HP and MP visibility
+- CC icon and timer awareness
+- role and distance scanning
 
 ### Settings
 
-Use the `GB` window to adjust:
+The settings window is where you tune how the bars behave and look.
 
-- general behavior
-- bar layout and spacing
-- text sizes and limits
-- CC icon display
-- color groups for health, mana, text, and borders
+You can:
 
-The settings window also includes:
+- adjust layout, spacing, text, colors, and CC display
+- swap between presets like `Raid`, `Compact`, `Large`, and `Minimal`
+- save and load named profiles from `.data`
+- create backups before larger changes
 
-- `Backup`
-- `Import`
-- style reset
-- full reset
+### Click Targeting
 
-### CC Tracking
+The HP bar is the click surface for targeting.
 
-CC icons and timers can be attached directly to each custom bar. This keeps the important information where your eyes already are instead of floating off into the wilderness.
+You can:
 
-### Performance
-
-Recent updates focused on reducing redundant widget work and smoothing raid-time scheduling while keeping bar accuracy intact. The goal is simple:
-
-- bars stay locked to the right unit
-- HP and MP remain current
-- targeting and highlights stay correct
-- the addon wastes less frame time doing the same work twice
+- click bars to target units
+- hold `Shift` or `Ctrl` to make the bars click-through
+- move the launcher and settings window with `Shift + drag`
 
 ## Notes
 
-- `watchtarget` and target-of-target behavior still depends on what the client exposes at runtime.
-- The addon keeps backup files under `.data/backups`.
-- If something feels off after a major update, try one reload before blaming the addon, the API, or fate.
+- The addon stores settings under `.data/settings.txt` and keeps named profiles in `.data`.
+- Launcher position is stored separately so it does not get stomped by profile changes.
+- Backup files are stored in `.data/backups`.
+- `watchtarget` and other client-dependent surfaces still rely on what AAClassic exposes at runtime.
 
 ## Version
 
-Current version: `1.5.40`
+Current version: `1.5.41`

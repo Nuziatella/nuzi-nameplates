@@ -20,7 +20,7 @@ local Compat = loadModule("compat")
 local addon = {
     name = "Gharka Bars",
     author = "Nuzi",
-    version = "1.5.40",
+    version = "1.5.41",
     desc = "Overhead raid bars"
 }
 
@@ -28,6 +28,9 @@ local hotDataElapsedMs = 0
 local bulkDataElapsedMs = 0
 local hotPositionElapsedMs = 0
 local bulkPositionElapsedMs = 0
+local HOT_POSITION_INTERVAL_MS = 33
+local HOT_DATA_INTERVAL_MS = 60
+local BULK_DATA_INTERVAL_MS = 220
 
 local function logInfo(message)
     if api.Log ~= nil and api.Log.Info ~= nil then
@@ -93,9 +96,13 @@ local function onUpdate(dt)
     bulkDataElapsedMs = bulkDataElapsedMs + delta
     hotPositionElapsedMs = hotPositionElapsedMs + delta
     bulkPositionElapsedMs = bulkPositionElapsedMs + delta
-    if hotPositionElapsedMs >= 16 then
+    if hotPositionElapsedMs >= HOT_POSITION_INTERVAL_MS then
         hotPositionElapsedMs = 0
-        Bars.UpdateHotPositions()
+        if Bars.UpdateVisiblePositions ~= nil then
+            Bars.UpdateVisiblePositions()
+        else
+            Bars.UpdateHotPositions()
+        end
     end
     local bulkPositionIntervalMs = 16
     if Bars ~= nil and Bars.GetBulkPositionIntervalMs ~= nil then
@@ -105,11 +112,11 @@ local function onUpdate(dt)
         bulkPositionElapsedMs = 0
         Bars.UpdateBulkPositions()
     end
-    if hotDataElapsedMs >= 100 then
+    if hotDataElapsedMs >= HOT_DATA_INTERVAL_MS then
         hotDataElapsedMs = 0
         Bars.UpdateHotData()
     end
-    if bulkDataElapsedMs >= 150 then
+    if bulkDataElapsedMs >= BULK_DATA_INTERVAL_MS then
         bulkDataElapsedMs = 0
         Bars.UpdateBulkData()
     end

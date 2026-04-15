@@ -25,6 +25,15 @@ local Bars = {
     hot_unit_keys = {},
     bulk_unit_keys = {},
     active_bulk_unit_keys = {},
+    unit_id_cache = {},
+    render_owners = {},
+    position_sources = {},
+    bulk_active_cursor = 1,
+    bulk_cold_cursor = 1,
+    visible_bulk_cursor = 1,
+    discovery_position_active_cursor = 1,
+    discovery_position_cold_cursor = 1,
+    hovered_unit = nil,
     target_unitframe = nil,
     watchtarget_unitframe = nil,
     targetoftarget_unitframe = nil,
@@ -51,18 +60,35 @@ local TARGET_GLOW_COLOR = { 255, 245, 0, 255 }
 local TARGET_TINT_COLOR = { 255, 245, 0, 170 }
 local CC_DISPEL_BORDER_COLOR = { 180, 72, 255, 255 }
 local CC_DISPEL_SLOT_COLOR = { 0.7059, 0.2824, 1, 1 }
+local DANGER_RED_COLOR = { 220, 46, 46, 255 }
+local CRITICAL_RED_COLOR = { 120, 8, 8, 255 }
 local BLOODLUST_BUFF_ID = 1482
 local HOSTILE_TEXT_COLOR = { 255, 244, 244, 255 }
 local NEUTRAL_TEXT_COLOR = { 40, 28, 0, 255 }
 local CC_SCAN_INTERVAL_MS = 250
 local CC_EXTRA_ICON_COUNT = 3
 local HOT_UNIT_STATIC_REFRESH_MS = 0
-local BULK_UNIT_STATIC_REFRESH_MS = 8000
+local BULK_UNIT_STATIC_REFRESH_MS = 0
 local BULK_UNIT_STATIC_JITTER_MS = 2400
-local BULK_POSITION_INTERVAL_SMALL_MS = 16
-local BULK_POSITION_INTERVAL_MEDIUM_MS = 24
-local BULK_POSITION_INTERVAL_LARGE_MS = 33
-local BULK_POSITION_INTERVAL_XL_MS = 50
+local INCOMPLETE_STATIC_REFRESH_MS = 15000
+local FRAME_FADE_DURATION_MS = 140
+local POSITION_LOSS_GRACE_MS = 220
+local PLAYER_POSITION_LOSS_GRACE_MS = 320
+local DISTANCE_HIDE_GRACE_MS = 180
+local DISTANCE_HIDE_HYSTERESIS_M = 6
+local BULK_POSITION_INTERVAL_SMALL_MS = 33
+local BULK_POSITION_INTERVAL_MEDIUM_MS = 50
+local BULK_POSITION_INTERVAL_LARGE_MS = 66
+local BULK_POSITION_INTERVAL_XL_MS = 100
+local BULK_ACTIVE_DATA_BATCH_SIZE = 14
+local BULK_COLD_DATA_BATCH_SIZE = 6
+local BULK_DISCOVERY_BATCH_SIZE = 14
+local VISIBLE_BULK_DATA_MIN_BATCH_SIZE = 6
+local VISIBLE_BULK_DATA_MAX_BATCH_SIZE = 20
+local DISCOVERY_POSITION_ACTIVE_BATCH_SIZE = 10
+local DISCOVERY_POSITION_COLD_BATCH_SIZE = 12
+local BLOODLUST_SCAN_INTERVAL_MS = 450
+local HOVER_CLUSTER_DIM_ALPHA = 0.42
 local CC_CATEGORY_STYLE_KEYS = {
     hard = "show_cc_hard",
     silence = "show_cc_silence",
@@ -78,6 +104,19 @@ local PLAYER_CC_VISIBILITY_CACHE = {
 
 local function clamp(v, lo, hi, default)
     return Shared.Clamp(v, lo, hi, default)
+end
+
+local function lerpColor(colorA, colorB, t)
+    local srcA = type(colorA) == "table" and colorA or { 255, 255, 255, 255 }
+    local srcB = type(colorB) == "table" and colorB or srcA
+    local alpha = clamp(t, 0, 1, 0)
+    local out = {}
+    for index = 1, 4 do
+        local a = tonumber(srcA[index]) or (index == 4 and 255 or 0)
+        local b = tonumber(srcB[index]) or a
+        out[index] = math.floor((a + ((b - a) * alpha)) + 0.5)
+    end
+    return out
 end
 
 local function safeUiNowMs()
@@ -249,8 +288,148 @@ local function normalizeTargetToken(unit)
     return token
 end
 
+local function isShiftDown()
+    if api ~= nil and api.Input ~= nil and api.Input.IsShiftKeyDown ~= nil then
+        local ok, value = pcall(function()
+            return api.Input:IsShiftKeyDown()
+        end)
+        if ok then
+            return value and true or false
+        end
+    end
+    return false
+end
+
+local function isCtrlDown()
+    if api ~= nil and api.Input ~= nil then
+        if api.Input.IsControlKeyDown ~= nil then
+            local ok, value = pcall(function()
+                return api.Input:IsControlKeyDown()
+            end)
+            if ok then
+                return value and true or false
+            end
+        end
+        if api.Input.IsCtrlKeyDown ~= nil then
+            local ok, value = pcall(function()
+                return api.Input:IsCtrlKeyDown()
+            end)
+            if ok then
+                return value and true or false
+            end
+        end
+    end
+    return false
+end
+
+local function shouldPassThroughClick(settings)
+    if isShiftDown() then
+        return true
+    end
+    if isCtrlDown() then
+        return true
+    end
+    return false
+end
+
+local function canClickTargetUnit(unit, settings)
+    if type(settings) ~= "table" or settings.click_target ~= true then
+        return false
+    end
+    if shouldPassThroughClick(settings) then
+        return false
+    end
+    return unit ~= nil
+end
+
+local function setEventWindowInteraction(frame, enabled)
+    if frame == nil then
+        return
+    end
+    local interactive = enabled and true or false
+    frame.__ghb_click_target = interactive
+    if frame.eventWindow == nil then
+        return
+    end
+    if frame.eventWindow.EnablePick ~= nil then
+        pcall(function()
+            frame.eventWindow:EnablePick(interactive)
+        end)
+    end
+    Helpers.SafeClickable(frame.eventWindow, interactive)
+    Helpers.SafeShow(frame.eventWindow, interactive)
+end
+
 local function isHotUnit(unit)
     return unit == "target" or unit == "player" or unit == "watchtarget"
+end
+
+local function getCanonicalRenderPriority(unit)
+    local key = tostring(unit or "")
+    if key == "player" then
+        return 100000
+    end
+    local teamIndex = tonumber(string.match(key, "^team(%d+)$") or "")
+    if teamIndex ~= nil then
+        return 90000 - teamIndex
+    end
+    if key == "playerpet1" then
+        return 80000
+    end
+    if key == "target" then
+        return 30000
+    end
+    if key == "watchtarget" then
+        return 20000
+    end
+    if key == "targettarget" or key == "target_of_target" or key == "targetoftarget" then
+        return 10000
+    end
+    return 0
+end
+
+local function getCanonicalPositionPriority(unit)
+    local key = tostring(unit or "")
+    local teamIndex = tonumber(string.match(key, "^team(%d+)$") or "")
+    if teamIndex ~= nil then
+        return 100000 - teamIndex
+    end
+    if key == "player" then
+        return 90000
+    end
+    if key == "playerpet1" then
+        return 80000
+    end
+    if key == "target" then
+        return 30000
+    end
+    if key == "watchtarget" then
+        return 20000
+    end
+    if key == "targettarget" or key == "target_of_target" or key == "targetoftarget" then
+        return 10000
+    end
+    return 0
+end
+
+local function getUnitDisplayPriority(unit)
+    local key = tostring(unit or "")
+    if key == "player" then
+        return 500
+    end
+    if string.match(key, "^team%d+$") then
+        return 400
+    end
+    if key == "watchtarget" then
+        return 300
+    end
+    if key == "target" then
+        return 200
+    end
+    if key == "playerpet1" then
+        return 100
+    end
+    return 0
 end
 
 local function getUnitHash(unit)
@@ -294,15 +473,87 @@ local function normalizeUnitId(unitId)
     return nil
 end
 
-local function getCurrentTargetUnitId()
+local function queryUnitId(unit)
     if api == nil or api.Unit == nil or api.Unit.GetUnitId == nil then
         return nil
     end
     local unitId = nil
     pcall(function()
-        unitId = api.Unit:GetUnitId("target")
+        unitId = api.Unit:GetUnitId(unit)
     end)
     return normalizeUnitId(unitId)
+end
+
+local function getCurrentTargetUnitId()
+    return queryUnitId("target")
+end
+
+local function buildRenderOwnerMap(unitIds)
+    local bestByUnitId = {}
+    local owners = {}
+    for unit, unitId in pairs(unitIds or {}) do
+        if unitId ~= nil then
+            local priority = getCanonicalRenderPriority(unit)
+            local current = bestByUnitId[unitId]
+            if current == nil
+                or priority > current.priority
+                or (priority == current.priority and tostring(unit) < tostring(current.unit)) then
+                bestByUnitId[unitId] = {
+                    unit = unit,
+                    priority = priority
+                }
+            end
+        end
+    end
+    for unit, unitId in pairs(unitIds or {}) do
+        if unitId ~= nil and bestByUnitId[unitId] ~= nil then
+            owners[unit] = bestByUnitId[unitId].unit
+        else
+            owners[unit] = unit
+        end
+    end
+    return owners
+end
+
+local function buildPositionSourceMap(unitIds)
+    local bestByUnitId = {}
+    local sources = {}
+    for unit, unitId in pairs(unitIds or {}) do
+        if unitId ~= nil then
+            local priority = getCanonicalPositionPriority(unit)
+            local current = bestByUnitId[unitId]
+            if current == nil
+                or priority > current.priority
+                or (priority == current.priority and tostring(unit) < tostring(current.unit)) then
+                bestByUnitId[unitId] = {
+                    unit = unit,
+                    priority = priority
+                }
+            end
+        end
+    end
+    for unit, unitId in pairs(unitIds or {}) do
+        if unitId ~= nil and bestByUnitId[unitId] ~= nil then
+            sources[unit] = bestByUnitId[unitId].unit
+        else
+            sources[unit] = unit
+        end
+    end
+    return sources
+end
+
+local function applyFrameCompositeAlpha(frame)
+    if frame == nil or frame.cache == nil then
+        return
+    end
+    local cache = frame.cache
+    local fadeAlpha = tonumber(cache.fade_alpha)
+    if fadeAlpha == nil then
+        fadeAlpha = cache.shown and 1 or 0
+    end
+    local baseAlpha = tonumber(cache.base_alpha) or 1
+    local hoverAlpha = tonumber(cache.hover_alpha_mult) or 1
+    Helpers.SafeSetAlpha(frame, fadeAlpha * baseAlpha * hoverAlpha)
 end
 
 local function getStockTargetFrame()
@@ -522,13 +773,7 @@ local function getCachedUnitStatic(frame, unit, unitId, includeRole, nowMs)
         if nowMs > 0 and nextRefreshMs > 0 and nowMs >= nextRefreshMs then
             refreshNeeded = true
         end
-        if includeRoleBool and cached.role == nil then
-            refreshNeeded = true
-        end
         if cached.info == nil or tostring(cached.name_text or "") == "" then
-            refreshNeeded = true
-        end
-        if includeRoleBool and tostring(cached.class_name or "") == "" then
             refreshNeeded = true
         end
     end
@@ -542,8 +787,16 @@ local function getCachedUnitStatic(frame, unit, unitId, includeRole, nowMs)
     if includeRoleBool and role == nil then
         role, className = Role.GetRoleForUnit(unit)
     end
+    local nameText = getUnitName(unit, unitId, info)
+    local guildText = type(info) == "table" and tostring(info.expeditionName or info.guildName or info.guild or "") or ""
+    local needsRetry = info == nil or nameText == "" or guildText == ""
+    if includeRoleBool and tostring(className or "") == "" then
+        needsRetry = true
+    end
     local nextRefreshMs = 0
-    if nowMs > 0 and getStaticRefreshIntervalMs(unit) > 0 then
+    if nowMs > 0 and needsRetry then
+        nextRefreshMs = nowMs + INCOMPLETE_STATIC_REFRESH_MS + getStaticRefreshJitterMs(unit)
+    elseif nowMs > 0 and getStaticRefreshIntervalMs(unit) > 0 then
         nextRefreshMs = nowMs + getStaticRefreshIntervalMs(unit) + getStaticRefreshJitterMs(unit)
     end
 
@@ -552,8 +805,8 @@ local function getCachedUnitStatic(frame, unit, unitId, includeRole, nowMs)
         last_refresh_ms = nowMs,
         next_refresh_ms = nextRefreshMs,
         info = info,
-        name_text = getUnitName(unit, unitId, info),
-        guild_text = type(info) == "table" and tostring(info.expeditionName or info.guildName or info.guild or "") or "",
+        name_text = nameText,
+        guild_text = guildText,
         role = role,
         class_name = className
     }
@@ -969,13 +1222,27 @@ local function ensureFrame(unit)
     pcall(function()
         eventWindow:AddAnchor("TOPLEFT", frame, 0, 0)
         eventWindow:AddAnchor("BOTTOMRIGHT", frame, 0, 0)
-        eventWindow:Show(true)
+        eventWindow:Show(false)
         if eventWindow.EnablePick ~= nil then
             eventWindow:EnablePick(true)
         end
     end)
-    Helpers.SafeClickable(eventWindow, true)
+    Helpers.SafeClickable(eventWindow, false)
+    local function onHoverEnter()
+        Bars.hovered_unit = frame.__ghb_unit or unit
+    end
+    local function onHoverLeave()
+        if Bars.hovered_unit == (frame.__ghb_unit or unit) then
+            Bars.hovered_unit = nil
+        end
+    end
+    if frame.SetHandler ~= nil then
+        frame:SetHandler("OnEnter", onHoverEnter)
+        frame:SetHandler("OnLeave", onHoverLeave)
+    end
     if eventWindow ~= nil and eventWindow.SetHandler ~= nil then
+        eventWindow:SetHandler("OnEnter", onHoverEnter)
+        eventWindow:SetHandler("OnLeave", onHoverLeave)
         eventWindow:SetHandler("OnClick", function(_, button)
             if button == "RightButton" or button == "MiddleButton" then
                 return
@@ -989,8 +1256,9 @@ local function ensureFrame(unit)
     frame.eventWindow = eventWindow
     frame.__ghb_unit = unit
     frame.__ghb_unit_id = nil
-    frame.__ghb_click_target = true
+    frame.__ghb_click_target = false
     frame.cache = {}
+    setEventWindowInteraction(frame, false)
     hideCcWidgets(frame)
     applyLayerToFrame(frame)
     Bars.frames[unit] = frame
@@ -1098,6 +1366,41 @@ changeTarget = function(unit, unitId)
     logTargetDebug(string.format("Click target request unit=%s unitId=%s current=%s", tostring(normalizedUnit), tostring(desiredUnitId), tostring(beforeTargetId)))
 
     if normalizedUnit == nil and desiredUnitId == nil and (targetName == nil or targetName == "") then
+        return
+    end
+
+    if normalizedUnit == "player" then
+        if type(TargetUnit) == "function" then
+            if tryTargetCall("TargetUnit(player)", function()
+                TargetUnit("player")
+            end, beforeTargetId, desiredUnitId) then
+                return
+            end
+        end
+        if api ~= nil and api.Unit ~= nil and type(api.Unit.TargetUnit) == "function" then
+            if tryTargetCall("api.Unit.TargetUnit(player)", function()
+                api.Unit.TargetUnit("player")
+            end, beforeTargetId, desiredUnitId) then
+                return
+            end
+            if tryTargetCall("api.Unit:TargetUnit(player)", function()
+                api.Unit:TargetUnit("player")
+            end, beforeTargetId, desiredUnitId) then
+                return
+            end
+        end
+        if type(X2Unit) == "table" and type(X2Unit.TargetUnit) == "function" then
+            if tryTargetCall("X2Unit.TargetUnit(player)", function()
+                X2Unit.TargetUnit("player")
+            end, beforeTargetId, desiredUnitId) then
+                return
+            end
+            if tryTargetCall("X2Unit:TargetUnit(player)", function()
+                X2Unit:TargetUnit("player")
+            end, beforeTargetId, desiredUnitId) then
+                return
+            end
+        end
         return
     end
 
@@ -1376,9 +1679,31 @@ local function isBloodlustFriendlyUnit(unit, info)
     return unitHasBuff(unit, BLOODLUST_BUFF_ID)
 end
 
-local function getBarRelation(unit, info)
+local function getCachedBloodlustState(frame, unit, unitId, info, nowMs)
+    if frame == nil or frame.cache == nil or unitId == nil then
+        return isBloodlustFriendlyUnit(unit, info)
+    end
     local faction = type(info) == "table" and tostring(info.faction or "") or ""
-    if isBloodlustFriendlyUnit(unit, info) then
+    if faction == "hostile" or faction == "neutral" then
+        frame.cache.bloodlust_unit_id = unitId
+        frame.cache.bloodlust_active = false
+        frame.cache.bloodlust_next_scan_ms = 0
+        return false
+    end
+    local nextScanMs = tonumber(frame.cache.bloodlust_next_scan_ms) or 0
+    if frame.cache.bloodlust_unit_id == unitId and nowMs > 0 and nextScanMs > nowMs then
+        return frame.cache.bloodlust_active == true
+    end
+    local active = isBloodlustFriendlyUnit(unit, info)
+    frame.cache.bloodlust_unit_id = unitId
+    frame.cache.bloodlust_active = active and true or false
+    frame.cache.bloodlust_next_scan_ms = (tonumber(nowMs) or 0) + BLOODLUST_SCAN_INTERVAL_MS
+    return frame.cache.bloodlust_active
+end
+
+local function getBarRelation(frame, unit, unitId, info, nowMs)
+    local faction = type(info) == "table" and tostring(info.faction or "") or ""
+    if getCachedBloodlustState(frame, unit, unitId, info, nowMs) then
         return "bloodlust"
     end
     if faction == "hostile" then
@@ -1390,8 +1715,8 @@ local function getBarRelation(unit, info)
     return "friendly"
 end
 
-local function getHpBarAppearance(unit, cfg, info)
-    local relation = getBarRelation(unit, info)
+local function getHpBarAppearance(frame, unit, unitId, cfg, info, nowMs)
+    local relation = getBarRelation(frame, unit, unitId, info, nowMs)
     if relation == "bloodlust" then
         if isUnitTeamMember(unit) then
             return relation, Helpers.Color01(cfg.bloodlust_team_color, { 255, 140, 40, 255 }), nil
@@ -1407,11 +1732,33 @@ local function getHpBarAppearance(unit, cfg, info)
     return relation, Helpers.Color01(cfg.hp_bar_color, { 220, 46, 46, 255 }), nil
 end
 
-local function updateHpBarColor(frame, unit, cfg, info)
+local function applyHealthGradientToBarColor(rgba, currentValue, maxValue)
+    local maxNum = tonumber(maxValue) or 0
+    if maxNum <= 0 then
+        return rgba
+    end
+    local currentNum = tonumber(currentValue) or 0
+    if currentNum < 0 then
+        currentNum = 0
+    end
+    local pct = currentNum / maxNum
+    if pct >= 0.6 then
+        return rgba
+    end
+    if pct <= 0.1 then
+        local criticalBlend = 1 - (pct / 0.1)
+        return lerpColor(DANGER_RED_COLOR, CRITICAL_RED_COLOR, criticalBlend)
+    end
+    local blend = (0.6 - pct) / 0.5
+    return lerpColor(rgba, DANGER_RED_COLOR, blend)
+end
+
+local function updateHpBarColor(frame, unit, unitId, cfg, info, currentValue, maxValue, nowMs)
     if frame == nil or frame.hpBar == nil or frame.hpBar.statusBar == nil then
         return
     end
-    local relation, rgba, textColor = getHpBarAppearance(unit, cfg, info)
+    local relation, rgba, textColor = getHpBarAppearance(frame, unit, unitId, cfg, info, nowMs)
+    rgba = applyHealthGradientToBarColor(rgba, currentValue, maxValue)
     local key = table.concat({
         tostring(rgba[1] or ""),
         tostring(rgba[2] or ""),
@@ -1442,6 +1789,7 @@ local function hideFrame(frame)
         return
     end
     if frame.cache ~= nil then
+        frame.cache.display_enabled = false
         frame.cache.active = false
         frame.cache.shown = false
     end
@@ -1450,6 +1798,76 @@ local function hideFrame(frame)
     setBorderVisible(frame.targetTint, false, TARGET_TINT_COLOR)
     hideCcWidgets(frame)
     Helpers.SafeShow(frame, false)
+end
+
+local function fadeFrame(frame, targetAlpha, nowMs)
+    if frame == nil or frame.cache == nil then
+        return
+    end
+    local cache = frame.cache
+    local target = clamp(targetAlpha, 0, 1, 0)
+    local current = tonumber(cache.fade_alpha)
+    if current == nil then
+        current = cache.shown and 1 or 0
+    end
+    nowMs = tonumber(nowMs) or safeUiNowMs()
+    local lastMs = tonumber(cache.fade_last_ms) or nowMs
+    local delta = nowMs - lastMs
+    if delta < 0 then
+        delta = 0
+    end
+    if delta > 250 then
+        delta = 250
+    end
+    local step = FRAME_FADE_DURATION_MS > 0 and (delta / FRAME_FADE_DURATION_MS) or 1
+    if step > 1 then
+        step = 1
+    end
+
+    local nextAlpha = current
+    if target > current then
+        nextAlpha = math.min(target, current + step)
+    elseif target < current then
+        nextAlpha = math.max(target, current - step)
+    end
+
+    cache.fade_alpha = nextAlpha
+    cache.fade_target_alpha = target
+    cache.fade_last_ms = nowMs
+
+    if nextAlpha > 0.01 then
+        cache.active = true
+        cache.shown = true
+        Helpers.SafeShow(frame, true)
+        applyFrameCompositeAlpha(frame)
+    else
+        Helpers.SafeSetAlpha(frame, 0)
+        if target <= 0 then
+            cache.active = false
+            cache.shown = false
+            Role.Hide(frame)
+            setBorderVisible(frame.targetGlow, false, TARGET_GLOW_COLOR)
+            setBorderVisible(frame.targetTint, false, TARGET_TINT_COLOR)
+            hideCcWidgets(frame)
+            setEventWindowInteraction(frame, false)
+            Helpers.SafeShow(frame, false)
+        end
+    end
+end
+
+local function showFrame(frame, nowMs)
+    fadeFrame(frame, 1, nowMs)
+end
+
+local function fadeOutFrame(frame, nowMs)
+    fadeFrame(frame, 0, nowMs)
+end
+
+local function setFrameDisplayEnabled(frame, enabled)
+    if frame == nil or frame.cache == nil then
+        return
+    end
+    frame.cache.display_enabled = enabled and true or false
 end
 
 local function getScreenPosition(frame, unit, settings)
@@ -1471,26 +1889,265 @@ local function getScreenPosition(frame, unit, settings)
     return screenX, screenY, screenZ
 end
 
+local function getPositionLossGraceMs(unit)
+    if tostring(unit or "") == "player" then
+        return PLAYER_POSITION_LOSS_GRACE_MS
+    end
+    return POSITION_LOSS_GRACE_MS
+end
+
+local function rememberValidScreenPosition(frame, screenX, screenY, screenZ, nowMs)
+    if frame == nil or frame.cache == nil then
+        return
+    end
+    frame.cache.last_valid_screen_x = tonumber(screenX)
+    frame.cache.last_valid_screen_y = tonumber(screenY)
+    frame.cache.last_valid_screen_z = tonumber(screenZ)
+    frame.cache.last_valid_screen_ms = tonumber(nowMs) or 0
+    frame.cache.invalid_screen_since_ms = nil
+end
+
+local function resolveStableScreenPosition(frame, unit, settings, nowMs, graceUnit)
+    local screenX, screenY, screenZ = getScreenPosition(frame, unit, settings)
+    local valid = screenX ~= nil and screenY ~= nil and (screenZ == nil or screenZ >= 0)
+    if valid then
+        rememberValidScreenPosition(frame, screenX, screenY, screenZ, nowMs)
+        return screenX, screenY, screenZ, true
+    end
+
+    if frame == nil or frame.cache == nil then
+        return nil, nil, screenZ, false
+    end
+
+    local cache = frame.cache
+    if cache.invalid_screen_since_ms == nil then
+        cache.invalid_screen_since_ms = tonumber(nowMs) or 0
+    end
+
+    local graceMs = getPositionLossGraceMs(graceUnit or unit)
+    local invalidSinceMs = tonumber(cache.invalid_screen_since_ms) or 0
+    local staleForMs = (tonumber(nowMs) or 0) - invalidSinceMs
+    local lastX = tonumber(cache.last_valid_screen_x)
+    local lastY = tonumber(cache.last_valid_screen_y)
+    if lastX ~= nil and lastY ~= nil and cache.shown and staleForMs < graceMs then
+        return lastX, lastY, tonumber(cache.last_valid_screen_z), false
+    end
+
+    return nil, nil, screenZ, false
+end
+
+local function shouldHideForDistance(frame, unit, distance, cfg, nowMs)
+    if type(distance) ~= "number" then
+        if frame ~= nil and frame.cache ~= nil then
+            frame.cache.distance_out_since_ms = nil
+        end
+        return false
+    end
+
+    local maxDistance = clamp(cfg.max_distance, 10, 300, 130)
+    if distance <= maxDistance then
+        if frame ~= nil and frame.cache ~= nil then
+            frame.cache.distance_out_since_ms = nil
+        end
+        return false
+    end
+
+    local cache = frame ~= nil and frame.cache or nil
+    if cache ~= nil and cache.shown and distance <= (maxDistance + DISTANCE_HIDE_HYSTERESIS_M) then
+        cache.distance_out_since_ms = nil
+        return false
+    end
+
+    if cache == nil then
+        return true
+    end
+
+    if cache.distance_out_since_ms == nil then
+        cache.distance_out_since_ms = tonumber(nowMs) or 0
+        return false
+    end
+
+    local elapsed = (tonumber(nowMs) or 0) - (tonumber(cache.distance_out_since_ms) or 0)
+    if elapsed < DISTANCE_HIDE_GRACE_MS then
+        return false
+    end
+
+    return true
+end
+
 local function placeFrame(frame, cfg, screenX, screenY)
     if frame == nil or frame.cache == nil then
         return
     end
     local width = tonumber(frame.cache.frame_width) or clamp(cfg.width, 80, 320, 156)
-    local roundedX = math.floor((tonumber(screenX) or 0) + 0.5)
-    local roundedY = math.floor((tonumber(screenY) or 0) + 0.5)
-    local posX = roundedX + clamp(cfg.x_offset, -500, 500, 0) - math.floor(width / 2)
-    local posY = roundedY - clamp(cfg.y_offset, -200, 200, 24)
+    local rawX = tonumber(screenX) or 0
+    local rawY = tonumber(screenY) or 0
+    local targetX = rawX + clamp(cfg.x_offset, -500, 500, 0) - (width / 2)
+    local targetY = rawY - clamp(cfg.y_offset, -200, 200, 24)
+    local anchorX = math.floor(targetX + 0.5)
+    local anchorY = math.floor(targetY + 0.5)
     if frame.cache.shown and frame.cache.posX ~= nil and frame.cache.posY ~= nil then
-        if math.abs(frame.cache.posX - posX) <= 1 and math.abs(frame.cache.posY - posY) <= 1 then
+        if math.abs(frame.cache.posX - anchorX) < 1 and math.abs(frame.cache.posY - anchorY) < 1 then
             return
         end
     end
-    if frame.cache.posX == posX and frame.cache.posY == posY and frame.cache.shown then
+    if frame.cache.posX == anchorX and frame.cache.posY == anchorY and frame.cache.shown then
         return
     end
-    frame.cache.posX = posX
-    frame.cache.posY = posY
-    Helpers.SafeAnchor(frame, "TOPLEFT", "UIParent", "TOPLEFT", posX, posY)
+    frame.cache.posX = anchorX
+    frame.cache.posY = anchorY
+    Helpers.SafeAnchor(frame, "TOPLEFT", "UIParent", "TOPLEFT", anchorX, anchorY)
+end
+
+local function getClusterConfig(mode)
+    local key = tostring(mode or "split")
+    if key == "off" then
+        return { threshold_x = 0.8, threshold_y = 0.8, x_step = 0, y_step = 0, split = false }
+    end
+    if key == "light" then
+        return { threshold_x = 0.82, threshold_y = 0.9, x_step = 10, y_step = 14, split = false }
+    end
+    if key == "medium" then
+        return { threshold_x = 0.88, threshold_y = 0.95, x_step = 12, y_step = 18, split = false }
+    end
+    if key == "strong" then
+        return { threshold_x = 0.96, threshold_y = 1.05, x_step = 14, y_step = 24, split = false }
+    end
+    return { threshold_x = 0.84, threshold_y = 0.92, x_step = 12, y_step = 12, split = true }
+end
+
+local function getFrameHpPct(frame)
+    if frame == nil or frame.cache == nil then
+        return 1
+    end
+    return tonumber(frame.cache.hp_pct) or 1
+end
+
+local function getClusterPriority(entry, targetUnitId, hoveredUnit)
+    local frame = entry.frame
+    local unit = tostring(entry.unit or "")
+    local score = 0
+    if hoveredUnit ~= nil and unit == hoveredUnit then
+        score = score + 1000
+    end
+    if targetUnitId ~= nil and tostring(frame.__ghb_unit_id or "") == tostring(targetUnitId) then
+        score = score + 900
+    end
+    if unit == "target" then
+        score = score + 800
+    elseif unit == "watchtarget" then
+        score = score + 700
+    elseif unit == "player" then
+        score = score + 650
+    end
+    local hpPct = getFrameHpPct(frame)
+    score = score + math.floor((1 - hpPct) * 300)
+    local ccCount = type(frame.cache.cc_effects) == "table" and #frame.cache.cc_effects or 0
+    score = score + math.min(120, ccCount * 25)
+    return score
+end
+
+local function sortClusterEntries(entries, targetUnitId, hoveredUnit)
+    table.sort(entries, function(a, b)
+        local aScore = getClusterPriority(a, targetUnitId, hoveredUnit)
+        local bScore = getClusterPriority(b, targetUnitId, hoveredUnit)
+        if aScore ~= bScore then
+            return aScore > bScore
+        end
+        local aRank = tonumber(a.frame ~= nil and a.frame.cache ~= nil and a.frame.cache.cluster_rank or 0) or 0
+        local bRank = tonumber(b.frame ~= nil and b.frame.cache ~= nil and b.frame.cache.cluster_rank or 0) or 0
+        if aRank ~= bRank then
+            return aRank < bRank
+        end
+        local aHp = getFrameHpPct(a.frame)
+        local bHp = getFrameHpPct(b.frame)
+        if aHp ~= bHp then
+            return aHp < bHp
+        end
+        return tostring(a.unit or "") < tostring(b.unit or "")
+    end)
+end
+
+local function overlapsCluster(a, b, config)
+    local maxWidth = math.max(tonumber(a.width) or 0, tonumber(b.width) or 0)
+    local maxHeight = math.max(tonumber(a.height) or 0, tonumber(b.height) or 0)
+    local dx = math.abs((tonumber(a.raw_x) or 0) - (tonumber(b.raw_x) or 0))
+    local dy = math.abs((tonumber(a.raw_y) or 0) - (tonumber(b.raw_y) or 0))
+    return dx <= (maxWidth * (config.threshold_x or 0.85)) and dy <= (maxHeight * (config.threshold_y or 0.9))
+end
+
+local function buildClusters(entries, config)
+    local clusters = {}
+    local visited = {}
+    for index, entry in ipairs(entries) do
+        if not visited[index] then
+            local queue = { index }
+            visited[index] = true
+            local cluster = {}
+            local head = 1
+            while head <= #queue do
+                local currentIndex = queue[head]
+                head = head + 1
+                local current = entries[currentIndex]
+                cluster[#cluster + 1] = current
+                for otherIndex = 1, #entries do
+                    if not visited[otherIndex] and overlapsCluster(current, entries[otherIndex], config) then
+                        visited[otherIndex] = true
+                        queue[#queue + 1] = otherIndex
+                    end
+                end
+            end
+            clusters[#clusters + 1] = cluster
+        end
+    end
+    return clusters
+end
+
+local function applyClusterLayout(cluster, config, targetUnitId, hoveredUnit, clusterId)
+    if #cluster == 0 then
+        return
+    end
+    sortClusterEntries(cluster, targetUnitId, hoveredUnit)
+    local hoveredInCluster = false
+    for _, entry in ipairs(cluster) do
+        if hoveredUnit ~= nil and tostring(entry.unit or "") == hoveredUnit then
+            hoveredInCluster = true
+            break
+        end
+    end
+    local centerIndex = math.floor((#cluster + 1) / 2)
+    for index, entry in ipairs(cluster) do
+        local frame = entry.frame
+        if frame ~= nil and frame.cache ~= nil then
+            local xOffset = 0
+            local yOffset = 0
+            if config.split then
+                if index == 1 then
+                    xOffset = 0
+                    yOffset = 0
+                else
+                    local side = ((index - 2) % 2 == 0) and -1 or 1
+                    local ring = math.floor((index - 2) / 2) + 1
+                    xOffset = side * config.x_step * ring
+                    yOffset = config.y_step * ring
+                end
+            else
+                local relative = index - centerIndex
+                xOffset = relative * config.x_step
+                yOffset = math.abs(relative) * config.y_step
+            end
+            placeFrame(frame, entry.cfg, entry.screen_x + xOffset, entry.screen_y + yOffset)
+            frame.cache.cluster_id = clusterId
+            frame.cache.cluster_rank = index
+            frame.cache.shown = true
+            frame.cache.hover_alpha_mult = 1
+            if hoveredInCluster and hoveredUnit ~= nil and tostring(entry.unit or "") ~= hoveredUnit then
+                frame.cache.hover_alpha_mult = HOVER_CLUSTER_DIM_ALPHA
+            end
+            showFrame(frame, entry.now_ms)
+            applyFrameCompositeAlpha(frame)
+        end
+    end
 end
 
 local function updateOne(unit, context)
@@ -1507,20 +2164,27 @@ local function updateOne(unit, context)
         forceShowPlayerCc = type(playerForcedCcEffects) == "table" and #playerForcedCcEffects > 0
     end
     if not (settings.enabled and (shouldShowUnit(unit, settings) or forceShowPlayerCc)) then
-        hideFrame(Bars.frames[unit])
+        setFrameDisplayEnabled(Bars.frames[unit], false)
+        fadeOutFrame(Bars.frames[unit], context.nowMs)
         return
     end
 
-    local frame = ensureFrame(unit)
-    local unitId = nil
-    pcall(function()
-        unitId = api.Unit:GetUnitId(unit)
-    end)
-    unitId = normalizeUnitId(unitId)
+    local unitId = type(context.unitIds) == "table" and context.unitIds[unit] or queryUnitId(unit)
+    local renderOwner = type(context.renderOwners) == "table" and context.renderOwners[unit] or unit
+    local frame = nil
     if unitId == nil then
-        hideFrame(frame)
+        frame = Bars.frames[unit]
+        setFrameDisplayEnabled(frame, false)
+        fadeOutFrame(frame, context.nowMs)
         return
     end
+    if renderOwner ~= nil and renderOwner ~= unit then
+        frame = Bars.frames[unit]
+        setFrameDisplayEnabled(frame, false)
+        fadeOutFrame(frame, context.nowMs)
+        return
+    end
+    frame = ensureFrame(unit)
 
     local distance = nil
     if api.Unit.UnitDistance ~= nil then
@@ -1528,8 +2192,9 @@ local function updateOne(unit, context)
             distance = api.Unit:UnitDistance(unit)
         end)
     end
-    if type(distance) == "number" and distance > clamp(cfg.max_distance, 10, 300, 130) then
-        hideFrame(frame)
+    if shouldHideForDistance(frame, unit, distance, cfg, context.nowMs) then
+        setFrameDisplayEnabled(frame, false)
+        fadeOutFrame(frame, context.nowMs)
         return
     end
 
@@ -1550,7 +2215,8 @@ local function updateOne(unit, context)
     local info = static ~= nil and static.info or nil
     local nameText = static ~= nil and tostring(static.name_text or "") or ""
     if nameText == "" then
-        hideFrame(frame)
+        setFrameDisplayEnabled(frame, false)
+        fadeOutFrame(frame, context.nowMs)
         return
     end
     nameText = trimText(nameText, cfg.name_max_chars)
@@ -1567,7 +2233,7 @@ local function updateOne(unit, context)
         frame.cache.style = fingerprint
         Layout.Apply(frame, cfg, layoutContent)
     end
-    local role = (cfg.show_role and static ~= nil and static.role) or "dps"
+    local role = cfg.show_role and static ~= nil and static.role or nil
 
     updateCachedText(frame, "name", frame.nameLabel, nameText)
     updateCachedText(frame, "guild", frame.guildLabel, displayGuildText)
@@ -1576,12 +2242,13 @@ local function updateOne(unit, context)
     updateCachedText(frame, "distText", frame.distanceLabel, cfg.show_distance and type(distance) == "number" and string.format("%.0fm", distance) or "")
     updateStatusBar(frame, "hp", frame.hpBar, hp, hpMax)
     updateStatusBar(frame, "mp", frame.mpBar, mp, mpMax)
-    updateHpBarColor(frame, unit, cfg, info)
+    updateHpBarColor(frame, unit, unitId, cfg, info, hp, hpMax, context.nowMs)
+    frame.cache.hp = hp
+    frame.cache.hp_max = hpMax
+    frame.cache.hp_pct = (hpMax ~= nil and hpMax > 0) and math.max(0, math.min(1, hp / hpMax)) or 1
     frame.__ghb_unit = unit
     frame.__ghb_unit_id = unitId
-    frame.__ghb_click_target = settings.click_target and true or false
-    Helpers.SafeClickable(frame.eventWindow, frame.__ghb_click_target)
-    Helpers.SafeShow(frame.eventWindow, frame.__ghb_click_target)
+    setEventWindowInteraction(frame, canClickTargetUnit(unit, settings))
     Helpers.SafeShow(frame.nameLabel, cfg.show_name ~= false)
     Helpers.SafeShow(frame.guildLabel, cfg.show_guild and guildText ~= "")
     Helpers.SafeShow(frame.roleLabel, false)
@@ -1613,19 +2280,23 @@ local function updateOne(unit, context)
         hideCcWidgets(frame)
     end
 
+    setFrameDisplayEnabled(frame, true)
     frame.cache.active = true
     if context.include_position ~= false then
-        local screenX, screenY, screenZ = getScreenPosition(frame, unit, settings)
+        local positionSources = type(context.positionSources) == "table" and context.positionSources or Bars.position_sources
+        local positionUnit = positionSources ~= nil and positionSources[unit] or unit
+        local screenX, screenY, screenZ = resolveStableScreenPosition(frame, positionUnit, settings, context.nowMs, unit)
         if screenX == nil or screenY == nil or (screenZ ~= nil and screenZ < 0) then
-            hideFrame(frame)
+            setFrameDisplayEnabled(frame, false)
+            fadeOutFrame(frame, context.nowMs)
             return
         end
         placeFrame(frame, cfg, screenX, screenY)
-        frame.cache.shown = true
-        Helpers.SafeShow(frame, true)
+        frame.cache.hover_alpha_mult = 1
+        showFrame(frame, context.nowMs)
     elseif frame.cache.posX ~= nil and frame.cache.posY ~= nil then
-        frame.cache.shown = true
-        Helpers.SafeShow(frame, true)
+        frame.cache.hover_alpha_mult = 1
+        showFrame(frame, context.nowMs)
     else
         frame.cache.shown = false
     end
@@ -1637,23 +2308,36 @@ function Bars.Init()
     end
     ensureUnitKeys()
     Bars.layer_mode = currentLayerMode(Shared.EnsureSettings())
-    Bars.target_unitframe = getStockTargetFrame()
-    Bars.watchtarget_unitframe = getStockWatchtargetFrame()
-    Bars.targetoftarget_unitframe = getStockTargetOfTargetFrame()
 end
 
-local function buildContext(settings, cfg)
-    local targetUnitId = nil
-    pcall(function()
-        targetUnitId = api.Unit:GetUnitId("target")
-    end)
-    targetUnitId = normalizeUnitId(targetUnitId)
+local function buildContext(settings, cfg, unitKeys)
+    local unitIds = {}
+    for _, unit in ipairs(unitKeys or {}) do
+        local unitId = queryUnitId(unit)
+        unitIds[unit] = unitId
+        Bars.unit_id_cache[unit] = unitId
+    end
+    local mergedUnitIds = {}
+    for _, unit in ipairs(Bars.unit_keys or unitKeys or {}) do
+        local unitId = Bars.unit_id_cache[unit]
+        if unitId ~= nil then
+            mergedUnitIds[unit] = unitId
+        end
+    end
+    local renderOwners = buildRenderOwnerMap(mergedUnitIds)
+    local positionSources = buildPositionSourceMap(mergedUnitIds)
+    Bars.render_owners = renderOwners
+    Bars.position_sources = positionSources
+    local targetUnitId = unitIds.target or Bars.unit_id_cache.target or getCurrentTargetUnitId()
     return {
         settings = settings,
         cfg = cfg,
         targetUnitId = targetUnitId,
         nowMs = safeUiNowMs(),
-        include_position = true
+        include_position = true,
+        unitIds = unitIds,
+        renderOwners = renderOwners,
+        positionSources = positionSources
     }
 end
 
@@ -1661,6 +2345,93 @@ local function updateUnits(unitKeys, context)
     for _, unit in ipairs(unitKeys) do
         updateOne(unit, context)
     end
+end
+
+local function appendList(dst, src)
+    for _, value in ipairs(src or {}) do
+        dst[#dst + 1] = value
+    end
+end
+
+local function collectRoundRobinUnits(list, cursorKey, maxCount, seen)
+    local out = {}
+    local total = #list
+    if total <= 0 or maxCount <= 0 then
+        return out
+    end
+    local cursor = tonumber(Bars[cursorKey]) or 1
+    if cursor < 1 or cursor > total then
+        cursor = 1
+    end
+    local visited = 0
+    while visited < total and #out < maxCount do
+        local unit = list[cursor]
+        if unit ~= nil and not seen[unit] then
+            seen[unit] = true
+            out[#out + 1] = unit
+        end
+        cursor = cursor + 1
+        if cursor > total then
+            cursor = 1
+        end
+        visited = visited + 1
+    end
+    Bars[cursorKey] = cursor
+    return out
+end
+
+local function buildInactiveBulkUnitKeys()
+    local inactive = {}
+    local activeLookup = {}
+    for _, unit in ipairs(Bars.active_bulk_unit_keys or {}) do
+        activeLookup[unit] = true
+    end
+    for _, unit in ipairs(Bars.bulk_unit_keys or {}) do
+        if not activeLookup[unit] then
+            inactive[#inactive + 1] = unit
+        end
+    end
+    return inactive
+end
+
+local function buildShownActiveBulkUnitKeys()
+    local shown = {}
+    for _, unit in ipairs(Bars.active_bulk_unit_keys or {}) do
+        local frame = Bars.frames[unit]
+        if frame ~= nil and frame.cache ~= nil and frame.cache.shown then
+            shown[#shown + 1] = unit
+        end
+    end
+    return shown
+end
+
+local function buildHiddenActiveBulkUnitKeys()
+    local hidden = {}
+    for _, unit in ipairs(Bars.active_bulk_unit_keys or {}) do
+        local frame = Bars.frames[unit]
+        if frame == nil or frame.cache == nil or not frame.cache.shown then
+            hidden[#hidden + 1] = unit
+        end
+    end
+    return hidden
+end
+
+local function getVisibleBulkDataBatchSize(visibleCount)
+    local count = tonumber(visibleCount) or 0
+    if count <= 0 then
+        return 0
+    end
+    if count <= VISIBLE_BULK_DATA_MIN_BATCH_SIZE then
+        return count
+    end
+    local batch = math.ceil(count / 2)
+    if batch < VISIBLE_BULK_DATA_MIN_BATCH_SIZE then
+        batch = VISIBLE_BULK_DATA_MIN_BATCH_SIZE
+    end
+    if batch > VISIBLE_BULK_DATA_MAX_BATCH_SIZE then
+        batch = VISIBLE_BULK_DATA_MAX_BATCH_SIZE
+    end
+    return batch
 end
 
 local function prepareUpdateState()
@@ -1674,32 +2445,118 @@ local function prepareUpdateState()
         Bars.Reset()
         return nil, nil
     end
-    if Bars.target_unitframe == nil then
-        Bars.target_unitframe = getStockTargetFrame()
-    end
-    if Bars.watchtarget_unitframe == nil then
-        Bars.watchtarget_unitframe = getStockWatchtargetFrame()
-    end
-    if Bars.targetoftarget_unitframe == nil then
-        Bars.targetoftarget_unitframe = getStockTargetOfTargetFrame()
-    end
     return settings, Shared.GetStyleSettings()
 end
 
-local function updatePositionsForUnits(unitKeys, settings, cfg)
-    for _, unit in ipairs(unitKeys) do
+local function updatePositionsForUnits(unitKeys, settings, cfg, positionSources, renderOwners)
+    local nowMs = safeUiNowMs()
+    local entries = {}
+    for _, unit in ipairs(unitKeys or {}) do
         local frame = Bars.frames[unit]
-        if frame ~= nil and frame.cache ~= nil and frame.cache.active then
-            local screenX, screenY, screenZ = getScreenPosition(frame, unit, settings)
-            if screenX == nil or screenY == nil or (screenZ ~= nil and screenZ < 0) then
-                hideFrame(frame)
-            else
-                placeFrame(frame, cfg, screenX, screenY)
-                frame.cache.shown = true
-                Helpers.SafeShow(frame, true)
+        if frame ~= nil and frame.cache ~= nil then
+            local renderOwner = type(renderOwners) == "table" and renderOwners[unit] or unit
+            if renderOwner ~= nil and renderOwner ~= unit then
+                setFrameDisplayEnabled(frame, false)
+                setEventWindowInteraction(frame, false)
+                fadeOutFrame(frame, nowMs)
+            elseif frame.cache.display_enabled ~= true then
+                setEventWindowInteraction(frame, false)
+                if frame.cache.shown and tonumber(frame.cache.fade_target_alpha) == 0 then
+                    fadeOutFrame(frame, nowMs)
+                end
+            elseif frame.cache.active then
+                setEventWindowInteraction(frame, canClickTargetUnit(unit, settings))
+                local positionUnit = type(positionSources) == "table" and positionSources[unit] or unit
+                local screenX, screenY, screenZ = resolveStableScreenPosition(frame, positionUnit, settings, nowMs, unit)
+                if screenX == nil or screenY == nil or (screenZ ~= nil and screenZ < 0) then
+                    fadeOutFrame(frame, nowMs)
+                else
+                    entries[#entries + 1] = {
+                        unit = unit,
+                        frame = frame,
+                        cfg = cfg,
+                        screen_x = tonumber(screenX) or 0,
+                        screen_y = tonumber(screenY) or 0,
+                        raw_x = tonumber(screenX) or 0,
+                        raw_y = tonumber(screenY) or 0,
+                        width = tonumber(frame.cache.frame_width) or clamp(cfg.width, 80, 320, 156),
+                        height = tonumber(frame.cache.frame_height) or 48,
+                        now_ms = nowMs
+                    }
+                end
             end
         end
     end
+
+    local clusterConfig = getClusterConfig(cfg.cluster_spacing_mode)
+    if tostring(cfg.cluster_spacing_mode or "split") == "off" then
+        for _, entry in ipairs(entries) do
+            local frame = entry.frame
+            frame.cache.cluster_id = tostring(entry.unit or "")
+            frame.cache.hover_alpha_mult = 1
+            placeFrame(frame, entry.cfg, entry.screen_x, entry.screen_y)
+            showFrame(frame, entry.now_ms)
+            applyFrameCompositeAlpha(frame)
+        end
+        return
+    end
+
+    local clusters = buildClusters(entries, clusterConfig)
+    local targetUnitId = getCurrentTargetUnitId()
+    for clusterIndex, cluster in ipairs(clusters) do
+        applyClusterLayout(cluster, clusterConfig, targetUnitId, Bars.hovered_unit, tostring(clusterIndex))
+    end
+end
+
+local function shouldUseUnifiedClusterPass(cfg)
+    return tostring(type(cfg) == "table" and cfg.cluster_spacing_mode or "off") ~= "off"
+end
+
+local function updateVisiblePositions(settings, cfg)
+    local units = {}
+    local seen = {}
+    for _, unit in ipairs(Bars.hot_unit_keys or {}) do
+        if not seen[unit] then
+            seen[unit] = true
+            units[#units + 1] = unit
+        end
+    end
+    for _, unit in ipairs(buildShownActiveBulkUnitKeys()) do
+        if not seen[unit] then
+            seen[unit] = true
+            units[#units + 1] = unit
+        end
+    end
+    updatePositionsForUnits(units, settings, cfg, Bars.position_sources, Bars.render_owners)
+end
+
+local function updateDiscoveryPositions(settings, cfg)
+    -- Hidden/offscreen bulk units stay on a colder round-robin lane so they do not
+    -- fight the movement cadence of bars that are already visible.
+    local units = {}
+    local seen = {}
+    appendList(units, collectRoundRobinUnits(buildHiddenActiveBulkUnitKeys(), "discovery_position_active_cursor", DISCOVERY_POSITION_ACTIVE_BATCH_SIZE, seen))
+    appendList(units, collectRoundRobinUnits(buildInactiveBulkUnitKeys(), "discovery_position_cold_cursor", DISCOVERY_POSITION_COLD_BATCH_SIZE, seen))
+    updatePositionsForUnits(units, settings, cfg, Bars.position_sources, Bars.render_owners)
+end
+
+local function updateVisibleData(settings, cfg)
+    -- Split visible raid data across two hot ticks so shown bars stay current
+    -- without a single large burst every refresh.
+    local units = {}
+    local seen = {}
+    for _, unit in ipairs(Bars.hot_unit_keys or {}) do
+        if not seen[unit] then
+            seen[unit] = true
+            units[#units + 1] = unit
+        end
+    end
+    local shownBulkUnits = buildShownActiveBulkUnitKeys()
+    local batchSize = getVisibleBulkDataBatchSize(#shownBulkUnits)
+    appendList(units, collectRoundRobinUnits(shownBulkUnits, "visible_bulk_cursor", batchSize, seen))
+    local context = buildContext(settings, cfg, units)
+    context.include_position = false
+    updateUnits(units, context)
 end
 
 function Bars.Update()
@@ -1707,7 +2564,10 @@ function Bars.Update()
     if settings == nil then
         return
     end
-    updateUnits(Bars.unit_keys, buildContext(settings, cfg))
+    local context = buildContext(settings, cfg, Bars.unit_keys)
+    context.include_position = false
+    updateUnits(Bars.unit_keys, context)
+    updatePositionsForUnits(Bars.unit_keys, settings, cfg, context.positionSources, context.renderOwners)
     rebuildActiveBulkUnitKeys()
 end
 
@@ -1716,9 +2576,7 @@ function Bars.UpdateHotData()
     if settings == nil then
         return
     end
-    local context = buildContext(settings, cfg)
-    context.include_position = false
-    updateUnits(Bars.hot_unit_keys, context)
+    updateVisibleData(settings, cfg)
 end
 
 function Bars.UpdateBulkData()
@@ -1726,9 +2584,15 @@ function Bars.UpdateBulkData()
     if settings == nil then
         return
     end
-    local context = buildContext(settings, cfg)
+    local units = {}
+    local seen = {}
+    appendList(units, collectRoundRobinUnits(buildHiddenActiveBulkUnitKeys(), "bulk_active_cursor", BULK_ACTIVE_DATA_BATCH_SIZE, seen))
+    local inactiveKeys = buildInactiveBulkUnitKeys()
+    local coldBatchSize = (#Bars.active_bulk_unit_keys > 0) and BULK_COLD_DATA_BATCH_SIZE or BULK_DISCOVERY_BATCH_SIZE
+    appendList(units, collectRoundRobinUnits(inactiveKeys, "bulk_cold_cursor", coldBatchSize, seen))
+    local context = buildContext(settings, cfg, units)
     context.include_position = false
-    updateUnits(Bars.bulk_unit_keys, context)
+    updateUnits(units, context)
     rebuildActiveBulkUnitKeys()
 end
 
@@ -1739,7 +2603,15 @@ function Bars.UpdateHotPositions()
     if settings == nil then
         return
     end
-    updatePositionsForUnits(Bars.hot_unit_keys, settings, cfg)
+    updateVisiblePositions(settings, cfg)
+end
+
+function Bars.UpdateVisiblePositions()
+    local settings, cfg = prepareUpdateState()
+    if settings == nil then
+        return
+    end
+    updateVisiblePositions(settings, cfg)
 end
 
 function Bars.UpdateBulkPositions()
@@ -1747,7 +2619,10 @@ function Bars.UpdateBulkPositions()
     if settings == nil then
         return
     end
-    updatePositionsForUnits(Bars.active_bulk_unit_keys, settings, cfg)
+    if shouldUseUnifiedClusterPass(cfg) then
+        return
+    end
+    updateDiscoveryPositions(settings, cfg)
 end
 
 function Bars.GetBulkPositionIntervalMs()
@@ -1759,12 +2634,25 @@ function Bars.UpdatePositions()
     if settings == nil then
         return
     end
-    updatePositionsForUnits(Bars.hot_unit_keys, settings, cfg)
-    updatePositionsForUnits(Bars.active_bulk_unit_keys, settings, cfg)
+    if shouldUseUnifiedClusterPass(cfg) then
+        updateVisiblePositions(settings, cfg)
+        return
+    end
+    updateVisiblePositions(settings, cfg)
+    updateDiscoveryPositions(settings, cfg)
 end
 
 function Bars.Reset()
     Bars.active_bulk_unit_keys = {}
+    Bars.unit_id_cache = {}
+    Bars.render_owners = {}
+    Bars.position_sources = {}
+    Bars.bulk_active_cursor = 1
+    Bars.bulk_cold_cursor = 1
+    Bars.visible_bulk_cursor = 1
+    Bars.discovery_position_active_cursor = 1
+    Bars.discovery_position_cold_cursor = 1
+    Bars.hovered_unit = nil
     for _, frame in pairs(Bars.frames) do
         hideFrame(frame)
     end
@@ -1784,6 +2672,15 @@ function Bars.Unload()
     Bars.hot_unit_keys = {}
     Bars.bulk_unit_keys = {}
     Bars.active_bulk_unit_keys = {}
+    Bars.unit_id_cache = {}
+    Bars.render_owners = {}
+    Bars.position_sources = {}
+    Bars.bulk_active_cursor = 1
+    Bars.bulk_cold_cursor = 1
+    Bars.visible_bulk_cursor = 1
+    Bars.discovery_position_active_cursor = 1
+    Bars.discovery_position_cold_cursor = 1
+    Bars.hovered_unit = nil
     Bars.target_unitframe = nil
     Bars.watchtarget_unitframe = nil
     Bars.targetoftarget_unitframe = nil

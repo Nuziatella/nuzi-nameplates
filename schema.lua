@@ -1,14 +1,14 @@
 local Schema = {}
 
 Schema.GLOBAL_TOGGLES = {
-    { key = "enabled", label = "Addon enabled" },
-    { key = "anchor_to_nametag", label = "Anchor to name tag" },
-    { key = "click_target", label = "Click bars to target" },
-    { key = "show_player", label = "Show player" },
-    { key = "show_target", label = "Show target" },
-    { key = "show_watchtarget", label = "Show watchtarget" },
-    { key = "show_raid_party", label = "Show raid / party" },
-    { key = "show_mount", label = "Show mount / pet" }
+    { key = "enabled", label = "Addon on" },
+    { key = "anchor_to_nametag", label = "Name tag anchor" },
+    { key = "click_target", label = "Click to target" },
+    { key = "show_player", label = "Self" },
+    { key = "show_target", label = "Target" },
+    { key = "show_watchtarget", label = "Watch target" },
+    { key = "show_raid_party", label = "Raid / party" },
+    { key = "show_mount", label = "Mount / pet" }
 }
 
 Schema.GLOBAL_CHOICES = {
@@ -42,64 +42,64 @@ Schema.GLOBAL_CHOICES = {
 }
 
 Schema.STYLE_TOGGLES = {
-    { key = "show_name", label = "Show name" },
-    { key = "show_guild", label = "Show guild" },
-    { key = "show_role", label = "Show role" },
-    { key = "show_hp_text", label = "Show HP text" },
-    { key = "show_mp_text", label = "Show MP text" },
-    { key = "show_mp_bar", label = "Show MP bar" },
-    { key = "show_distance", label = "Show distance" },
-    { key = "show_background", label = "Show background" }
+    { key = "show_name", label = "Name" },
+    { key = "show_guild", label = "Guild" },
+    { key = "show_role", label = "Role" },
+    { key = "show_hp_text", label = "HP text" },
+    { key = "show_mp_text", label = "MP text" },
+    { key = "show_mp_bar", label = "MP bar" },
+    { key = "show_distance", label = "Distance" },
+    { key = "show_background", label = "Backdrop" }
 }
 
 Schema.LAYOUT_SLIDERS = {
-    { key = "width", label = "Bar width", min = 80, max = 320, factor = 1 },
-    { key = "hp_height", label = "HP bar height", min = 8, max = 56, factor = 1 },
-    { key = "mp_height", label = "MP bar height", min = 0, max = 26, factor = 1 },
-    { key = "bar_gap", label = "Bar gap", min = 0, max = 10, factor = 1 },
-    { key = "alpha_pct", label = "Frame alpha", min = 10, max = 100, factor = 1 },
+    { key = "width", label = "Width", min = 80, max = 320, factor = 1 },
+    { key = "hp_height", label = "HP height", min = 8, max = 56, factor = 1 },
+    { key = "mp_height", label = "MP height", min = 0, max = 26, factor = 1 },
+    { key = "bar_gap", label = "Gap", min = 0, max = 10, factor = 1 },
+    { key = "alpha_pct", label = "Alpha", min = 10, max = 100, factor = 1 },
     { key = "bg_alpha_pct", label = "BG alpha", min = 0, max = 100, factor = 1 },
-    { key = "max_distance", label = "Max distance", min = 10, max = 300, factor = 1 },
-    { key = "x_offset", label = "Frame offset X", min = -500, max = 500, factor = 1 },
-    { key = "y_offset", label = "Frame offset Y", min = -200, max = 200, factor = 1 }
+    { key = "max_distance", label = "Range", min = 10, max = 300, factor = 1 },
+    { key = "x_offset", label = "Offset X", min = -500, max = 500, factor = 1 },
+    { key = "y_offset", label = "Offset Y", min = -200, max = 200, factor = 1 }
 }
 
 Schema.TEXT_SLIDERS = {
-    { key = "name_font_size", label = "Name font", min = 8, max = 30, factor = 1 },
-    { key = "name_max_chars", label = "Name max chars (0=full)", min = 0, max = 64, factor = 1 },
-    { key = "guild_font_size", label = "Guild font", min = 8, max = 24, factor = 1 },
-    { key = "guild_max_chars", label = "Guild max chars (0=full)", min = 0, max = 64, factor = 1 },
-    { key = "role_font_size", label = "Role font", min = 8, max = 24, factor = 1 },
-    { key = "value_font_size", label = "Value font", min = 8, max = 24, factor = 1 },
-    { key = "value_offset_x", label = "HP/MP text offset X", min = -80, max = 80, factor = 1 },
-    { key = "value_offset_y", label = "HP/MP text offset Y", min = -40, max = 40, factor = 1 },
-    { key = "distance_font_size", label = "Distance font", min = 8, max = 22, factor = 1 },
-    { key = "name_offset_x", label = "Name offset X", min = -80, max = 80, factor = 1 },
-    { key = "name_offset_y", label = "Name offset Y", min = -80, max = 80, factor = 1 },
-    { key = "guild_offset_x", label = "Guild offset X", min = -80, max = 80, factor = 1 },
-    { key = "guild_offset_y", label = "Guild offset Y", min = -80, max = 80, factor = 1 },
-    { key = "role_offset_x", label = "Role offset X", min = -80, max = 80, factor = 1 },
-    { key = "role_offset_y", label = "Role offset Y", min = -80, max = 80, factor = 1 },
-    { key = "distance_offset_x", label = "Distance offset X", min = -120, max = 120, factor = 1 },
-    { key = "distance_offset_y", label = "Distance offset Y", min = -120, max = 120, factor = 1 }
+    { key = "name_font_size", label = "Name size", min = 8, max = 30, factor = 1 },
+    { key = "name_max_chars", label = "Name chars", min = 0, max = 64, factor = 1 },
+    { key = "guild_font_size", label = "Guild size", min = 8, max = 24, factor = 1 },
+    { key = "guild_max_chars", label = "Guild chars", min = 0, max = 64, factor = 1 },
+    { key = "role_font_size", label = "Role size", min = 8, max = 24, factor = 1 },
+    { key = "value_font_size", label = "Value size", min = 8, max = 24, factor = 1 },
+    { key = "value_offset_x", label = "Value X", min = -80, max = 80, factor = 1 },
+    { key = "value_offset_y", label = "Value Y", min = -40, max = 40, factor = 1 },
+    { key = "distance_font_size", label = "Range size", min = 8, max = 22, factor = 1 },
+    { key = "name_offset_x", label = "Name X", min = -80, max = 80, factor = 1 },
+    { key = "name_offset_y", label = "Name Y", min = -80, max = 80, factor = 1 },
+    { key = "guild_offset_x", label = "Guild X", min = -80, max = 80, factor = 1 },
+    { key = "guild_offset_y", label = "Guild Y", min = -80, max = 80, factor = 1 },
+    { key = "role_offset_x", label = "Role X", min = -80, max = 80, factor = 1 },
+    { key = "role_offset_y", label = "Role Y", min = -80, max = 80, factor = 1 },
+    { key = "distance_offset_x", label = "Range X", min = -120, max = 120, factor = 1 },
+    { key = "distance_offset_y", label = "Range Y", min = -120, max = 120, factor = 1 }
 }
 
 Schema.CC_TOGGLES = {
-    { key = "show_cc", label = "Show crowd control icons" },
-    { key = "show_cc_timer", label = "Show CC timer" },
-    { key = "show_cc_secondary", label = "Show secondary CC icons" },
-    { key = "show_cc_hard", label = "Show hard CC" },
-    { key = "show_cc_silence", label = "Show silence / disarm" },
-    { key = "show_cc_root", label = "Show root / snare" },
+    { key = "show_cc", label = "CC icons" },
+    { key = "show_cc_timer", label = "CC timer" },
+    { key = "show_cc_secondary", label = "Secondary CC" },
+    { key = "show_cc_hard", label = "Hard CC" },
+    { key = "show_cc_silence", label = "Silence / disarm" },
+    { key = "show_cc_root", label = "Root / snare" },
     { key = "show_cc_slow", label = "Show slows" },
-    { key = "show_cc_dot", label = "Show DoTs" },
-    { key = "show_cc_misc", label = "Show misc CC" }
+    { key = "show_cc_dot", label = "DoTs" },
+    { key = "show_cc_misc", label = "Misc CC" }
 }
 
 Schema.CC_CHOICES = {
     {
         key = "cc_anchor",
-        label = "CC anchor",
+        label = "Anchor",
         options = {
             { value = "left", label = "Left" },
             { value = "right", label = "Right" },
@@ -119,12 +119,12 @@ Schema.CC_CHOICES = {
 }
 
 Schema.CC_SLIDERS = {
-    { key = "cc_icon_size", label = "Primary icon size", min = 16, max = 48, factor = 1 },
-    { key = "cc_secondary_icon_size", label = "Secondary icon size", min = 10, max = 32, factor = 1 },
-    { key = "cc_timer_font_size", label = "Timer font size", min = 8, max = 24, factor = 1 },
-    { key = "cc_gap", label = "Icon gap", min = 0, max = 12, factor = 1 },
-    { key = "cc_offset_x", label = "CC offset X", min = -80, max = 80, factor = 1 },
-    { key = "cc_offset_y", label = "CC offset Y", min = -80, max = 80, factor = 1 }
+    { key = "cc_icon_size", label = "Main size", min = 16, max = 48, factor = 1 },
+    { key = "cc_secondary_icon_size", label = "Small size", min = 10, max = 32, factor = 1 },
+    { key = "cc_timer_font_size", label = "Timer size", min = 8, max = 24, factor = 1 },
+    { key = "cc_gap", label = "Gap", min = 0, max = 12, factor = 1 },
+    { key = "cc_offset_x", label = "Offset X", min = -80, max = 80, factor = 1 },
+    { key = "cc_offset_y", label = "Offset Y", min = -80, max = 80, factor = 1 }
 }
 
 Schema.COLOR_GROUPS = {
@@ -143,7 +143,7 @@ Schema.COLOR_GROUPS = {
 Schema.STYLE_CHOICES = {
     {
         key = "value_mode",
-        label = "HP/MP text mode",
+        label = "Value mode",
         options = {
             { value = "current", label = "Current" },
             { value = "current_max", label = "Current / Max" },
@@ -153,10 +153,169 @@ Schema.STYLE_CHOICES = {
     },
     {
         key = "name_layout",
-        label = "Name/Guild layout",
+        label = "Name layout",
         options = {
             { value = "vertical", label = "Vertical" },
             { value = "horizontal", label = "Horizontal" }
+        }
+    },
+    {
+        key = "cluster_spacing_mode",
+        label = "Cluster mode (exp)",
+        options = {
+            { value = "off", label = "Off" },
+            { value = "split", label = "Split" },
+            { value = "light", label = "Light" },
+            { value = "medium", label = "Medium" },
+            { value = "strong", label = "Strong" }
+        }
+    }
+}
+
+Schema.STYLE_PRESETS = {
+    {
+        key = "raid",
+        label = "Raid",
+        description = "Balanced, readable raid bars with full data and full CC coverage.",
+        style = {
+            width = 152,
+            hp_height = 40,
+            mp_height = 10,
+            bar_gap = 1,
+            alpha_pct = 100,
+            bg_alpha_pct = 96,
+            max_distance = 300,
+            name_font_size = 17,
+            name_max_chars = 0,
+            guild_font_size = 12,
+            guild_max_chars = 18,
+            role_font_size = 20,
+            value_font_size = 14,
+            distance_font_size = 18,
+            show_name = true,
+            show_guild = true,
+            show_role = true,
+            show_hp_text = true,
+            show_mp_text = false,
+            show_mp_bar = true,
+            show_distance = true,
+            show_background = true,
+            show_cc = true,
+            show_cc_timer = true,
+            show_cc_secondary = true,
+            cc_anchor = "top",
+            cc_max_icons = 4,
+            cc_icon_size = 42,
+            cc_secondary_icon_size = 22,
+            cc_gap = 4
+        }
+    },
+    {
+        key = "compact",
+        label = "Compact",
+        description = "Slim bars for tighter screens while keeping the important combat info.",
+        style = {
+            width = 116,
+            hp_height = 28,
+            mp_height = 6,
+            bar_gap = 0,
+            alpha_pct = 96,
+            bg_alpha_pct = 84,
+            name_font_size = 14,
+            name_max_chars = 8,
+            guild_font_size = 10,
+            guild_max_chars = 10,
+            role_font_size = 16,
+            value_font_size = 12,
+            distance_font_size = 15,
+            show_name = true,
+            show_guild = false,
+            show_role = true,
+            show_hp_text = true,
+            show_mp_text = false,
+            show_mp_bar = true,
+            show_distance = true,
+            show_background = true,
+            show_cc = true,
+            show_cc_timer = true,
+            show_cc_secondary = false,
+            cc_anchor = "top",
+            cc_max_icons = 2,
+            cc_icon_size = 30,
+            cc_secondary_icon_size = 16,
+            cc_gap = 2
+        }
+    },
+    {
+        key = "large",
+        label = "Large",
+        description = "Bigger bars and fonts for easier reading from a distance.",
+        style = {
+            width = 176,
+            hp_height = 46,
+            mp_height = 12,
+            bar_gap = 2,
+            alpha_pct = 100,
+            bg_alpha_pct = 100,
+            name_font_size = 18,
+            name_max_chars = 0,
+            guild_font_size = 13,
+            guild_max_chars = 20,
+            role_font_size = 22,
+            value_font_size = 16,
+            distance_font_size = 20,
+            show_name = true,
+            show_guild = true,
+            show_role = true,
+            show_hp_text = true,
+            show_mp_text = true,
+            show_mp_bar = true,
+            show_distance = true,
+            show_background = true,
+            show_cc = true,
+            show_cc_timer = true,
+            show_cc_secondary = true,
+            cc_anchor = "top",
+            cc_max_icons = 4,
+            cc_icon_size = 46,
+            cc_secondary_icon_size = 26,
+            cc_gap = 4
+        }
+    },
+    {
+        key = "minimal",
+        label = "Minimal",
+        description = "Low-noise bars that keep only the essentials visible.",
+        style = {
+            width = 108,
+            hp_height = 24,
+            mp_height = 0,
+            bar_gap = 0,
+            alpha_pct = 92,
+            bg_alpha_pct = 68,
+            name_font_size = 14,
+            name_max_chars = 7,
+            guild_font_size = 10,
+            guild_max_chars = 0,
+            role_font_size = 14,
+            value_font_size = 11,
+            distance_font_size = 13,
+            show_name = true,
+            show_guild = false,
+            show_role = false,
+            show_hp_text = true,
+            show_mp_text = false,
+            show_mp_bar = false,
+            show_distance = false,
+            show_background = true,
+            show_cc = true,
+            show_cc_timer = false,
+            show_cc_secondary = false,
+            cc_anchor = "top",
+            cc_max_icons = 2,
+            cc_icon_size = 26,
+            cc_secondary_icon_size = 14,
+            cc_gap = 2
         }
     }
 }

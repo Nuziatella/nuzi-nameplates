@@ -255,11 +255,6 @@ local function buildEntry(debuff, tooltip, scanIndex)
 end
 
 local function compareEntries(a, b)
-    local aIndex = tonumber(a ~= nil and a.scan_index or 0) or 0
-    local bIndex = tonumber(b ~= nil and b.scan_index or 0) or 0
-    if aIndex ~= bIndex then
-        return aIndex > bIndex
-    end
     local aPriority = tonumber(a ~= nil and a.priority or 0) or 0
     local bPriority = tonumber(b ~= nil and b.priority or 0) or 0
     if aPriority ~= bPriority then
@@ -269,6 +264,11 @@ local function compareEntries(a, b)
     local bTime = tonumber(b ~= nil and b.time_left_ms or 0) or 0
     if aTime ~= bTime then
         return aTime > bTime
+    end
+    local aIndex = tonumber(a ~= nil and a.scan_index or 0) or 0
+    local bIndex = tonumber(b ~= nil and b.scan_index or 0) or 0
+    if aIndex ~= bIndex then
+        return aIndex > bIndex
     end
     local aId = tonumber(a ~= nil and a.buff_id or 0) or 0
     local bId = tonumber(b ~= nil and b.buff_id or 0) or 0

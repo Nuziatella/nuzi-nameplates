@@ -89,14 +89,14 @@ local ROLE_CLASS_MAP = {
 function Role.GetRoleForClass(className)
     local key = normalize(className)
     if key == "" then
-        return "dps"
+        return nil
     end
     for roleName, lookup in pairs(ROLE_CLASS_MAP) do
         if lookup[key] then
             return roleName
         end
     end
-    return "dps"
+    return nil
 end
 
 function Role.GetRoleForUnit(unit)
@@ -222,7 +222,7 @@ function Role.Hide(frame)
 end
 
 function Role.Apply(frame, cfg, role)
-    if frame == nil or type(cfg) ~= "table" or not cfg.show_role then
+    if frame == nil or type(cfg) ~= "table" or not cfg.show_role or role == nil or role == "" then
         Role.Hide(frame)
         return
     end
