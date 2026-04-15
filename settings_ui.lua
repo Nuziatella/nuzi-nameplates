@@ -395,6 +395,9 @@ local function createLabel(id, parent, text, x, y, fontSize, width)
         if label.style.SetAlign ~= nil then
             label.style:SetAlign(ALIGN.LEFT)
         end
+        if label.style.SetShadow ~= nil then
+            label.style:SetShadow(true)
+        end
     end
     return label
 end
