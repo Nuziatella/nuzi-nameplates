@@ -20,7 +20,7 @@ local Compat = loadModule("compat")
 local addon = {
     name = "Gharka Bars",
     author = "Nuzi",
-    version = "1.5.42",
+    version = "1.5.43",
     desc = "Overhead raid bars"
 }
 
@@ -28,14 +28,28 @@ local hotDataElapsedMs = 0
 local bulkDataElapsedMs = 0
 local hotPositionElapsedMs = 0
 local bulkPositionElapsedMs = 0
-local HOT_POSITION_INTERVAL_MS = 33
-local HOT_DATA_INTERVAL_MS = 60
+local HOT_POSITION_INTERVAL_MS = 16
+local HOT_DATA_INTERVAL_MS = 33
 local BULK_DATA_INTERVAL_MS = 220
 
 local function logInfo(message)
     if api.Log ~= nil and api.Log.Info ~= nil then
         api.Log:Info("[Gharka Bars] " .. tostring(message or ""))
     end
+end
+
+local function logError(message)
+    if api.Log ~= nil and api.Log.Err ~= nil then
+        api.Log:Err("[Gharka Bars] " .. tostring(message or ""))
+    end
+end
+
+local function safeBarsCall(label, fn)
+    local ok, err = pcall(fn)
+    if not ok then
+        logError(tostring(label or "Bars call failed") .. ": " .. tostring(err or "unknown error"))
+    end
+    return ok
 end
 
 local function modulesReady()
@@ -65,7 +79,9 @@ end
 local function buildActions()
     return {
         apply = function()
-            Bars.Update()
+            safeBarsCall("Bars.Update(apply)", function()
+                Bars.Update()
+            end)
         end,
         save = function()
             return Shared.SaveSettings()
@@ -80,7 +96,9 @@ local function buildActions()
 end
 
 local function applyAll()
-    Bars.Update()
+    safeBarsCall("Bars.Update(applyAll)", function()
+        Bars.Update()
+    end)
     SettingsUi.Refresh()
 end
 
@@ -99,9 +117,13 @@ local function onUpdate(dt)
     if hotPositionElapsedMs >= HOT_POSITION_INTERVAL_MS then
         hotPositionElapsedMs = 0
         if Bars.UpdateVisiblePositions ~= nil then
-            Bars.UpdateVisiblePositions()
+            safeBarsCall("Bars.UpdateVisiblePositions", function()
+                Bars.UpdateVisiblePositions()
+            end)
         else
-            Bars.UpdateHotPositions()
+            safeBarsCall("Bars.UpdateHotPositions", function()
+                Bars.UpdateHotPositions()
+            end)
         end
     end
     local bulkPositionIntervalMs = 16
@@ -110,15 +132,21 @@ local function onUpdate(dt)
     end
     if bulkPositionElapsedMs >= bulkPositionIntervalMs then
         bulkPositionElapsedMs = 0
-        Bars.UpdateBulkPositions()
+        safeBarsCall("Bars.UpdateBulkPositions", function()
+            Bars.UpdateBulkPositions()
+        end)
     end
     if hotDataElapsedMs >= HOT_DATA_INTERVAL_MS then
         hotDataElapsedMs = 0
-        Bars.UpdateHotData()
+        safeBarsCall("Bars.UpdateHotData", function()
+            Bars.UpdateHotData()
+        end)
     end
     if bulkDataElapsedMs >= BULK_DATA_INTERVAL_MS then
         bulkDataElapsedMs = 0
-        Bars.UpdateBulkData()
+        safeBarsCall("Bars.UpdateBulkData", function()
+            Bars.UpdateBulkData()
+        end)
     end
 end
 
@@ -128,11 +156,17 @@ local function onUiReloaded()
     hotPositionElapsedMs = 0
     bulkPositionElapsedMs = 0
     Compat.Probe(true)
-    Bars.Reset()
+    safeBarsCall("Bars.Reset(UI_RELOADED)", function()
+        Bars.Reset()
+    end)
     SettingsUi.Unload()
-    Bars.Init()
+    safeBarsCall("Bars.Init(UI_RELOADED)", function()
+        Bars.Init()
+    end)
     SettingsUi.Init(buildActions())
-    Bars.Update()
+    safeBarsCall("Bars.Update(UI_RELOADED)", function()
+        Bars.Update()
+    end)
 end
 
 local function onChatMessage(channel, unit, isHostile, name, message)
@@ -160,9 +194,13 @@ local function onLoad()
     Shared.LoadSettings()
     Compat.Probe(true)
     logRuntimeSummary()
-    Bars.Init()
+    safeBarsCall("Bars.Init(load)", function()
+        Bars.Init()
+    end)
     SettingsUi.Init(buildActions())
-    Bars.Update()
+    safeBarsCall("Bars.Update(load)", function()
+        Bars.Update()
+    end)
     api.On("UPDATE", onUpdate)
     api.On("UI_RELOADED", onUiReloaded)
     api.On("CHAT_MESSAGE", onChatMessage)

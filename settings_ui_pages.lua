@@ -79,6 +79,7 @@ local function bindStyleSlider(ctx, item, slider, value)
         if value ~= nil and value.SetText ~= nil then
             value:SetText(tostring(math.floor(n + 0.5)))
         end
+        ctx.applyChanges()
     end)
 end
 
@@ -96,6 +97,7 @@ local function bindColorSlider(ctx, colorKey, channelIndex, slider, value)
         if value ~= nil and value.SetText ~= nil then
             value:SetText(tostring(n))
         end
+        ctx.applyChanges()
     end)
 end
 
