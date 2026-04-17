@@ -1,11 +1,15 @@
 local api = require("api")
+local Core = api._NuziCore or require("nuzi-core/core")
+
+local Runtime = Core.Runtime
+local Settings = Core.Settings
 
 local Shared = {}
 
 Shared.CONSTANTS = {
     ADDON_ID = "gharka-bars",
     TITLE = "Gharka Bars",
-    VERSION = "1.5.41",
+    VERSION = "1.5.43",
     BUTTON_ID = "gharkaBarsSettingsButton",
     WINDOW_ID = "gharkaBarsSettingsWindow",
     SETTINGS_FILE_PATH = "gharka-bars/.data/settings.txt",
@@ -118,221 +122,188 @@ Shared.state = {
     icon_settings = nil
 }
 
-local function deepCopy(value, visited)
-    if type(value) ~= "table" then
-        return value
+local ICON_DEFAULTS = {
+    version = 1,
+    button_x = Shared.DEFAULT_SETTINGS.button_x,
+    button_y = Shared.DEFAULT_SETTINGS.button_y
+}
+
+Shared.Clamp = Runtime.Clamp
+
+local function assignChanged(target, key, value)
+    if target[key] == value then
+        return false
     end
-    visited = visited or {}
-    if visited[value] ~= nil then
-        return visited[value]
-    end
-    local out = {}
-    visited[value] = out
-    for k, v in pairs(value) do
-        out[deepCopy(k, visited)] = deepCopy(v, visited)
-    end
-    return out
+    target[key] = value
+    return true
 end
 
-local function mergeInto(dst, src)
-    if type(dst) ~= "table" or type(src) ~= "table" then
-        return
+local function normalizeMainSettings(settings)
+    if type(settings) ~= "table" then
+        return false
     end
-    for key, value in pairs(src) do
-        if type(value) == "table" then
-            if type(dst[key]) ~= "table" then
-                dst[key] = {}
-            end
-            mergeInto(dst[key], value)
-        else
-            dst[key] = value
+
+    local changed = false
+    if type(settings.style) ~= "table" then
+        settings.style = Runtime.DeepCopy(Shared.DEFAULT_SETTINGS.style)
+        changed = true
+    end
+
+    if settings.full_name_migration_v1 ~= true then
+        if type(settings.style) ~= "table" then
+            settings.style = Runtime.DeepCopy(Shared.DEFAULT_SETTINGS.style)
         end
+        settings.style.name_max_chars = 0
+        settings.style.guild_max_chars = 0
+        settings.full_name_migration_v1 = true
+        changed = true
     end
+
+    local buttonX = Shared.Clamp(settings.button_x, 0, 4000, Shared.DEFAULT_SETTINGS.button_x)
+    local buttonY = Shared.Clamp(settings.button_y, 0, 4000, Shared.DEFAULT_SETTINGS.button_y)
+    local windowX = Shared.Clamp(settings.window_x, 0, 4000, Shared.DEFAULT_SETTINGS.window_x)
+    local windowY = Shared.Clamp(settings.window_y, 0, 4000, Shared.DEFAULT_SETTINGS.window_y)
+
+    if assignChanged(settings, "button_x", buttonX) then
+        changed = true
+    end
+    if assignChanged(settings, "button_y", buttonY) then
+        changed = true
+    end
+    if assignChanged(settings, "window_x", windowX) then
+        changed = true
+    end
+    if assignChanged(settings, "window_y", windowY) then
+        changed = true
+    end
+
+    return changed
 end
 
-local function ensureDefaults(dst, defaults)
-    for key, value in pairs(defaults) do
-        if type(value) == "table" then
-            if type(dst[key]) ~= "table" then
-                dst[key] = deepCopy(value)
-            else
-                ensureDefaults(dst[key], value)
-            end
-        elseif dst[key] == nil then
-            dst[key] = value
-        end
+local store = Settings.CreateAddonStore(Shared.CONSTANTS, {
+    read_mode = "serialized_then_flat",
+    write_mode = "serialized_then_flat",
+    read_raw_text_fallback = true,
+    write_mirror_paths = {
+        Shared.CONSTANTS.LEGACY_SETTINGS_FILE_PATH
+    },
+    backups = {
+        read_mode = "serialized_then_flat",
+        write_mode = "serialized_then_flat",
+        read_raw_text_fallback = true,
+        backup_dir = Shared.CONSTANTS.SETTINGS_BACKUP_DIR,
+        backup_prefix = "settings",
+        index_file_path = Shared.CONSTANTS.SETTINGS_BACKUP_INDEX_FILE_PATH,
+        index_fallback_file_path = Shared.CONSTANTS.SETTINGS_BACKUP_INDEX_FALLBACK_FILE_PATH,
+        legacy_index_paths = {
+            Shared.CONSTANTS.LEGACY_SETTINGS_BACKUP_INDEX_FILE_PATH,
+            Shared.CONSTANTS.LEGACY_SETTINGS_BACKUP_INDEX_FALLBACK_FILE_PATH
+        },
+        latest_backup_file_path = Shared.CONSTANTS.SETTINGS_BACKUP_FILE_PATH,
+        legacy_latest_paths = {
+            Shared.CONSTANTS.LEGACY_SETTINGS_BACKUP_FILE_PATH
+        },
+        max_backups = 30
+    },
+    profiles = {
+        read_mode = "serialized_then_flat",
+        write_mode = "serialized_then_flat",
+        read_raw_text_fallback = true,
+        profile_dir = "gharka-bars/.data",
+        state_file_path = Shared.CONSTANTS.PROFILE_STATE_FILE_PATH,
+        state_mode = "serialized_then_flat",
+        state_write_mode = "serialized_then_flat",
+        state_raw_text_fallback = true
+    },
+    log_name = Shared.CONSTANTS.TITLE,
+    normalize = function(settings)
+        return normalizeMainSettings(settings)
     end
-end
+})
 
-local function readTableFile(path)
-    if api.File == nil or api.File.Read == nil then
-        return nil
-    end
-    local ok, res = pcall(function()
-        return api.File:Read(path)
-    end)
-    if ok and type(res) == "table" then
-        return res
-    end
-    return nil
-end
-
-local function writeTableFile(path, tbl)
-    if api.File == nil or api.File.Write == nil or type(tbl) ~= "table" then
-        return false, "api.File:Write unavailable"
-    end
-    local ok, err = pcall(function()
-        api.File:Write(path, tbl)
-    end)
-    if not ok then
-        return false, tostring(err)
-    end
-    return true, ""
-end
-
-local function normalizePath(path)
-    return string.gsub(tostring(path or ""), "\\", "/")
-end
-
-local function trimText(value)
-    local text = tostring(value or "")
-    text = string.gsub(text, "^%s+", "")
-    text = string.gsub(text, "%s+$", "")
-    return text
-end
-
-local function getFileName(path)
-    local normalized = normalizePath(path)
-    return string.match(normalized, "([^/]+)$") or normalized
-end
-
-local function ensureTxtExtension(name)
-    local text = tostring(name or "")
-    if string.match(string.lower(text), "%.txt$") ~= nil then
-        return text
-    end
-    return text .. ".txt"
-end
-
-local function normalizeProfilePath(path)
-    local text = trimText(path)
-    if text == "" then
-        return Shared.CONSTANTS.SETTINGS_FILE_PATH
-    end
-    text = normalizePath(text)
-    if string.find(text, "/", 1, true) == nil then
-        text = "gharka-bars/.data/" .. ensureTxtExtension(text)
-    end
-    return text
-end
-
-local function sanitizeProfileName(name)
-    local text = trimText(name)
-    text = string.gsub(text, "%.txt$", "")
-    text = string.gsub(text, "[^%w%-%_ ]", "_")
-    text = string.gsub(text, "%s+", "_")
-    text = trimText(text)
-    if text == "" then
-        return nil
-    end
-    local lower = string.lower(text)
-    if lower == "profile_state" or lower == "settings_backup" or lower == "settings_backup_index" then
-        text = text .. "_profile"
-    end
-    return ensureTxtExtension(text)
-end
-
-local function listProfilePaths(state)
-    local out = {}
-    local seen = {}
-    local function add(path)
-        local normalized = normalizeProfilePath(path)
-        if normalized == nil or seen[normalized] then
-            return
-        end
-        seen[normalized] = true
-        out[#out + 1] = normalized
-    end
-    add(Shared.CONSTANTS.SETTINGS_FILE_PATH)
-    if type(state) == "table" then
-        local count = tonumber(state.profile_count) or 0
-        for index = 1, count do
-            add(state[string.format("profile_%03d", index)])
-        end
-        add(state.active_profile)
-    end
-    table.sort(out, function(a, b)
-        if a == Shared.CONSTANTS.SETTINGS_FILE_PATH then
-            return true
-        end
-        if b == Shared.CONSTANTS.SETTINGS_FILE_PATH then
+local iconStore = Settings.CreateSidecarStore({
+    settings_file_path = Shared.CONSTANTS.ICON_SETTINGS_FILE_PATH,
+    defaults = Runtime.DeepCopy(ICON_DEFAULTS),
+    read_mode = "serialized_then_flat",
+    write_mode = "serialized_then_flat",
+    read_raw_text_fallback = true,
+    save_global_settings = false,
+    use_api_settings = false,
+    log_name = Shared.CONSTANTS.TITLE .. " Icon",
+    normalize = function(value)
+        if type(value) ~= "table" then
             return false
         end
-        return string.lower(getFileName(a)) < string.lower(getFileName(b))
-    end)
-    return out
-end
 
-local function writeProfilePaths(state, paths)
-    for key in pairs(state) do
-        if string.match(tostring(key), "^profile_%d%d%d$") ~= nil then
-            state[key] = nil
+        local changed = false
+        local version = tonumber(value.version) or ICON_DEFAULTS.version
+        local buttonX = Shared.Clamp(value.button_x, 0, 4000, ICON_DEFAULTS.button_x)
+        local buttonY = Shared.Clamp(value.button_y, 0, 4000, ICON_DEFAULTS.button_y)
+
+        if assignChanged(value, "version", version) then
+            changed = true
         end
-    end
-    state.profile_count = 0
-    for index, path in ipairs(paths or {}) do
-        state.profile_count = index
-        state[string.format("profile_%03d", index)] = normalizeProfilePath(path)
-    end
-end
+        if assignChanged(value, "button_x", buttonX) then
+            changed = true
+        end
+        if assignChanged(value, "button_y", buttonY) then
+            changed = true
+        end
 
-local function ensureIconSettings()
-    if type(Shared.state.icon_settings) ~= "table" then
-        Shared.state.icon_settings = {}
+        return changed
     end
-    local state = Shared.state.icon_settings
-    state.version = tonumber(state.version) or 1
-    state.button_x = Shared.Clamp(state.button_x, 0, 4000, Shared.DEFAULT_SETTINGS.button_x)
-    state.button_y = Shared.Clamp(state.button_y, 0, 4000, Shared.DEFAULT_SETTINGS.button_y)
-    return state
-end
+})
 
-local function saveIconSettings()
-    return writeTableFile(Shared.CONSTANTS.ICON_SETTINGS_FILE_PATH, ensureIconSettings())
+Shared.store = store
+Shared.icon_store = iconStore
+
+local function profileManager()
+    return store.profile_manager
 end
 
 local function ensureProfileState()
-    if type(Shared.state.profile_state) ~= "table" then
-        Shared.state.profile_state = {}
-    end
-    local state = Shared.state.profile_state
+    local manager = profileManager()
+    local state = manager ~= nil and manager:EnsureState() or {}
     state.version = tonumber(state.version) or 1
-    local paths = listProfilePaths(state)
-    if #paths == 0 then
-        paths = { Shared.CONSTANTS.SETTINGS_FILE_PATH }
-    end
-    writeProfilePaths(state, paths)
-    state.active_profile = normalizeProfilePath(state.active_profile or Shared.CONSTANTS.SETTINGS_FILE_PATH)
-    local activePresent = false
-    for _, path in ipairs(paths) do
-        if path == state.active_profile then
-            activePresent = true
-            break
-        end
-    end
-    if not activePresent then
-        paths[#paths + 1] = state.active_profile
-        writeProfilePaths(state, paths)
-    end
     state.window_x = Shared.Clamp(state.window_x, 0, 4000, Shared.DEFAULT_SETTINGS.window_x)
     state.window_y = Shared.Clamp(state.window_y, 0, 4000, Shared.DEFAULT_SETTINGS.window_y)
+    Shared.state.profile_state = state
     return state
+end
+
+local function saveProfileState()
+    local manager = profileManager()
+    if manager == nil then
+        return false
+    end
+    local state = ensureProfileState()
+    manager.state = state
+    local ok = manager:SaveState()
+    Shared.state.profile_state = state
+    return ok and true or false
+end
+
+local function ensureIconSettings()
+    local settings = iconStore:Ensure()
+    settings.version = tonumber(settings.version) or ICON_DEFAULTS.version
+    settings.button_x = Shared.Clamp(settings.button_x, 0, 4000, ICON_DEFAULTS.button_x)
+    settings.button_y = Shared.Clamp(settings.button_y, 0, 4000, ICON_DEFAULTS.button_y)
+    Shared.state.icon_settings = settings
+    return settings
+end
+
+local function saveIconSettings()
+    local settings = ensureIconSettings()
+    local ok = iconStore:Save()
+    Shared.state.icon_settings = settings
+    return ok and true or false
 end
 
 local function applyPersistentUiState(settings)
     if type(settings) ~= "table" then
         return settings
     end
+
     local iconState = ensureIconSettings()
     local state = ensureProfileState()
     settings.button_x = Shared.Clamp(iconState.button_x, 0, 4000, Shared.DEFAULT_SETTINGS.button_x)
@@ -342,154 +313,83 @@ local function applyPersistentUiState(settings)
     return settings
 end
 
-local function saveProfileState()
-    return writeTableFile(Shared.CONSTANTS.PROFILE_STATE_FILE_PATH, ensureProfileState())
-end
-
-function Shared.Clamp(value, minValue, maxValue, fallback)
-    local n = tonumber(value)
-    if n == nil then
-        return fallback
-    end
-    if minValue ~= nil and n < minValue then
-        return minValue
-    end
-    if maxValue ~= nil and n > maxValue then
-        return maxValue
-    end
-    return n
+function Shared.GetStore()
+    return store
 end
 
 function Shared.LoadSettings()
-    local migrated = false
-    local needsLocalBootstrap = false
-    local needsIconBootstrap = false
-    local profileState = readTableFile(Shared.CONSTANTS.PROFILE_STATE_FILE_PATH)
-    if type(profileState) == "table" then
-        Shared.state.profile_state = profileState
-    else
-        Shared.state.profile_state = {}
-    end
-    local iconState = readTableFile(Shared.CONSTANTS.ICON_SETTINGS_FILE_PATH)
-    if type(iconState) == "table" then
-        Shared.state.icon_settings = iconState
-    else
-        Shared.state.icon_settings = {}
-        needsIconBootstrap = true
-    end
-    profileState = ensureProfileState()
-    local activeProfilePath = normalizeProfilePath(profileState.active_profile)
-    local loaded = readTableFile(activeProfilePath)
-    if type(loaded) == "table" then
-        Shared.state.settings = loaded
-    elseif activeProfilePath ~= Shared.CONSTANTS.SETTINGS_FILE_PATH then
-        needsLocalBootstrap = true
-        profileState.active_profile = Shared.CONSTANTS.SETTINGS_FILE_PATH
-        loaded = readTableFile(Shared.CONSTANTS.SETTINGS_FILE_PATH)
-        if type(loaded) == "table" then
-            Shared.state.settings = loaded
+    local settings = store:Load()
+    Shared.state.settings = settings
+
+    local iconSettings, iconMeta = iconStore:Load()
+    Shared.state.icon_settings = iconSettings
+
+    local state = ensureProfileState()
+    local bootstrapIcon = false
+    if type(iconMeta) == "table" and not iconMeta.has_primary then
+        local buttonX = Shared.Clamp(state.button_x ~= nil and state.button_x or settings.button_x, 0, 4000, Shared.DEFAULT_SETTINGS.button_x)
+        local buttonY = Shared.Clamp(state.button_y ~= nil and state.button_y or settings.button_y, 0, 4000, Shared.DEFAULT_SETTINGS.button_y)
+        if assignChanged(iconSettings, "button_x", buttonX) then
+            bootstrapIcon = true
+        end
+        if assignChanged(iconSettings, "button_y", buttonY) then
+            bootstrapIcon = true
         end
     end
-    if type(Shared.state.settings) ~= "table" then
-        loaded = readTableFile(Shared.CONSTANTS.SETTINGS_FILE_PATH)
-    end
-    if type(loaded) == "table" and type(Shared.state.settings) ~= "table" then
-        Shared.state.settings = loaded
-    else
-        if type(Shared.state.settings) ~= "table" then
-            needsLocalBootstrap = true
-            local legacyLoaded = readTableFile(Shared.CONSTANTS.LEGACY_SETTINGS_FILE_PATH)
-            if type(legacyLoaded) == "table" then
-                Shared.state.settings = legacyLoaded
-                migrated = true
-            elseif api.GetSettings ~= nil then
-                Shared.state.settings = api.GetSettings(Shared.CONSTANTS.ADDON_ID) or {}
-            else
-                Shared.state.settings = {}
-            end
-        end
-    end
-    if needsIconBootstrap then
-        local iconSettings = ensureIconSettings()
-        iconSettings.button_x = Shared.Clamp(
-            ensureProfileState().button_x ~= nil and ensureProfileState().button_x or (type(Shared.state.settings) == "table" and Shared.state.settings.button_x or nil),
-            0,
-            4000,
-            Shared.DEFAULT_SETTINGS.button_x
-        )
-        iconSettings.button_y = Shared.Clamp(
-            ensureProfileState().button_y ~= nil and ensureProfileState().button_y or (type(Shared.state.settings) == "table" and Shared.state.settings.button_y or nil),
-            0,
-            4000,
-            Shared.DEFAULT_SETTINGS.button_y
-        )
-    end
-    Shared.EnsureSettings()
-    if migrated or needsLocalBootstrap then
-        Shared.SaveSettings()
-    end
-    if needsIconBootstrap then
+    if bootstrapIcon then
         saveIconSettings()
     end
+
+    applyPersistentUiState(settings)
     saveProfileState()
-    return Shared.state.settings
+
+    Shared.state.settings = settings
+    Shared.state.profile_state = state
+    Shared.state.icon_settings = iconSettings
+    return settings
 end
 
 function Shared.EnsureSettings()
-    if type(Shared.state.settings) ~= "table" then
-        Shared.state.settings = {}
-    end
-    ensureDefaults(Shared.state.settings, Shared.DEFAULT_SETTINGS)
-    if type(Shared.state.settings.style) ~= "table" then
-        Shared.state.settings.style = deepCopy(Shared.DEFAULT_SETTINGS.style)
-    end
-    local style = Shared.state.settings.style
-    if Shared.state.settings.full_name_migration_v1 ~= true then
-        style.name_max_chars = 0
-        style.guild_max_chars = 0
-        Shared.state.settings.full_name_migration_v1 = true
-    end
-    applyPersistentUiState(Shared.state.settings)
-    return Shared.state.settings
+    local settings = store:Ensure()
+    Runtime.ApplyDefaults(settings, Shared.DEFAULT_SETTINGS)
+    normalizeMainSettings(settings)
+    applyPersistentUiState(settings)
+    Shared.state.settings = settings
+    return settings
 end
 
 function Shared.GetStyleSettings()
     local settings = Shared.EnsureSettings()
     if type(settings.style) ~= "table" then
-        settings.style = deepCopy(Shared.DEFAULT_SETTINGS.style)
+        settings.style = Runtime.DeepCopy(Shared.DEFAULT_SETTINGS.style)
     end
     return settings.style
 end
 
 function Shared.ResetStyleSettings()
-    Shared.EnsureSettings().style = deepCopy(Shared.DEFAULT_SETTINGS.style)
+    Shared.EnsureSettings().style = Runtime.DeepCopy(Shared.DEFAULT_SETTINGS.style)
 end
 
 function Shared.ResetAllSettings()
-    Shared.state.settings = deepCopy(Shared.DEFAULT_SETTINGS)
+    Shared.state.settings = store:Reset()
+    applyPersistentUiState(Shared.state.settings)
 end
 
 function Shared.SaveSettings()
     local settings = Shared.EnsureSettings()
     applyPersistentUiState(settings)
-    if api.SaveSettings ~= nil then
-        pcall(function()
-            api.SaveSettings()
-        end)
-    end
-    local ok, err = writeTableFile(normalizeProfilePath(ensureProfileState().active_profile), settings)
-    if ok then
-        saveProfileState()
-    end
-    return ok, err
+    Shared.state.settings = settings
+    local ok, meta = store:Save()
+    saveProfileState()
+    return ok, meta
 end
 
 function Shared.GetActiveProfilePath()
-    return normalizeProfilePath(ensureProfileState().active_profile)
+    return store:GetActiveProfilePath()
 end
 
 function Shared.GetActiveProfileFileName()
-    return getFileName(Shared.GetActiveProfilePath())
+    return store:GetActiveProfileFileName()
 end
 
 function Shared.GetIconSettings()
@@ -512,155 +412,57 @@ function Shared.SetUiPosition(kind, x, y)
         Shared.SaveIconPosition(x, y)
         applyPersistentUiState(Shared.state.settings)
         return true
-    elseif kind == "window" then
-        local state = ensureProfileState()
-        state.window_x = Shared.Clamp(x, 0, 4000, Shared.DEFAULT_SETTINGS.window_x)
-        state.window_y = Shared.Clamp(y, 0, 4000, Shared.DEFAULT_SETTINGS.window_y)
-    else
+    end
+
+    if kind ~= "window" then
         return false
     end
+
+    local state = ensureProfileState()
+    state.window_x = Shared.Clamp(x, 0, 4000, Shared.DEFAULT_SETTINGS.window_x)
+    state.window_y = Shared.Clamp(y, 0, 4000, Shared.DEFAULT_SETTINGS.window_y)
+    Shared.state.profile_state = state
     applyPersistentUiState(Shared.state.settings)
     saveProfileState()
     return true
 end
 
 function Shared.ListProfiles()
-    local state = ensureProfileState()
-    local activePath = normalizeProfilePath(state.active_profile)
-    local out = {}
-    for _, path in ipairs(listProfilePaths(state)) do
-        out[#out + 1] = {
-            path = path,
-            file_name = getFileName(path),
-            is_active = path == activePath
-        }
-    end
-    return out
+    return store:ListProfiles()
 end
 
 function Shared.SaveSettingsAsProfile(name)
-    local fileName = sanitizeProfileName(name)
-    if fileName == nil then
-        return false, "enter a profile name"
-    end
-    local state = ensureProfileState()
-    local previousActive = normalizeProfilePath(state.active_profile)
-    state.active_profile = normalizeProfilePath(fileName)
-    writeProfilePaths(state, listProfilePaths(state))
-    local ok, err = Shared.SaveSettings()
-    if not ok then
-        state.active_profile = previousActive
+    local ok, result = store:SaveAsProfile(name)
+    if ok then
+        Shared.state.settings = store:Ensure()
+        applyPersistentUiState(Shared.state.settings)
         saveProfileState()
-        return false, err
     end
-    return true, getFileName(state.active_profile)
+    return ok, result
 end
 
 function Shared.LoadProfile(path)
-    local normalizedPath = normalizeProfilePath(path)
-    local parsed = readTableFile(normalizedPath)
-    if type(parsed) ~= "table" then
-        return false, "profile not found"
+    local ok, result = store:LoadProfile(path)
+    if ok then
+        Shared.state.settings = store:Ensure()
+        applyPersistentUiState(Shared.state.settings)
+        saveProfileState()
     end
-    Shared.state.settings = {}
-    mergeInto(Shared.state.settings, parsed)
-    Shared.EnsureSettings()
-    local state = ensureProfileState()
-    state.active_profile = normalizedPath
-    writeProfilePaths(state, listProfilePaths(state))
-    local ok, err = Shared.SaveSettings()
-    if not ok then
-        return false, err
-    end
-    return true, getFileName(normalizedPath)
+    return ok, result
 end
 
 function Shared.SaveSettingsBackup()
-    local settings = Shared.EnsureSettings()
-    local ts = nil
-    pcall(function()
-        if api.Time ~= nil and api.Time.GetLocalTime ~= nil then
-            ts = api.Time:GetLocalTime()
-        end
-    end)
-    if ts == nil then
-        ts = tostring(math.random(1000000000, 9999999999))
-    end
-    ts = tostring(ts)
-
-    local backupPath = string.format("%s/settings_%s.txt", Shared.CONSTANTS.SETTINGS_BACKUP_DIR, ts)
-    local ok, err = writeTableFile(backupPath, settings)
-    if not ok then
-        backupPath = string.format("gharka-bars/.data/settings_backup_%s.txt", ts)
-        ok, err = writeTableFile(backupPath, settings)
-        if not ok then
-            return false, err
-        end
-    end
-
-    local idx = readTableFile(Shared.CONSTANTS.SETTINGS_BACKUP_INDEX_FILE_PATH)
-    if type(idx) ~= "table" then
-        idx = readTableFile(Shared.CONSTANTS.SETTINGS_BACKUP_INDEX_FALLBACK_FILE_PATH)
-    end
-    if type(idx) ~= "table" then
-        idx = readTableFile(Shared.CONSTANTS.LEGACY_SETTINGS_BACKUP_INDEX_FILE_PATH)
-    end
-    if type(idx) ~= "table" then
-        idx = readTableFile(Shared.CONSTANTS.LEGACY_SETTINGS_BACKUP_INDEX_FALLBACK_FILE_PATH)
-    end
-    if type(idx) ~= "table" then
-        idx = { version = 1, backups = {} }
-    end
-    if type(idx.backups) ~= "table" then
-        idx.backups = {}
-    end
-    table.insert(idx.backups, 1, { path = backupPath, timestamp = ts })
-    while #idx.backups > 30 do
-        table.remove(idx.backups)
-    end
-    writeTableFile(Shared.CONSTANTS.SETTINGS_BACKUP_INDEX_FILE_PATH, idx)
-    pcall(function()
-        if readTableFile(Shared.CONSTANTS.SETTINGS_BACKUP_INDEX_FILE_PATH) == nil then
-            writeTableFile(Shared.CONSTANTS.SETTINGS_BACKUP_INDEX_FALLBACK_FILE_PATH, idx)
-        end
-    end)
-    pcall(function()
-        if readTableFile(Shared.CONSTANTS.SETTINGS_BACKUP_FILE_PATH) == nil then
-            writeTableFile(Shared.CONSTANTS.SETTINGS_BACKUP_FILE_PATH, settings)
-        end
-    end)
-    return true, backupPath
+    return store:SaveBackup()
 end
 
 function Shared.ImportLatestBackup()
-    local idx = readTableFile(Shared.CONSTANTS.SETTINGS_BACKUP_INDEX_FILE_PATH)
-    if type(idx) ~= "table" then
-        idx = readTableFile(Shared.CONSTANTS.SETTINGS_BACKUP_INDEX_FALLBACK_FILE_PATH)
+    local ok, result = store:ImportLatestBackup()
+    if ok then
+        Shared.state.settings = store:Ensure()
+        applyPersistentUiState(Shared.state.settings)
+        saveProfileState()
     end
-    if type(idx) ~= "table" then
-        idx = readTableFile(Shared.CONSTANTS.LEGACY_SETTINGS_BACKUP_INDEX_FILE_PATH)
-    end
-    if type(idx) ~= "table" then
-        idx = readTableFile(Shared.CONSTANTS.LEGACY_SETTINGS_BACKUP_INDEX_FALLBACK_FILE_PATH)
-    end
-    local backupPath = nil
-    if type(idx) == "table" and type(idx.backups) == "table" and type(idx.backups[1]) == "table" then
-        backupPath = idx.backups[1].path
-    end
-    if type(backupPath) ~= "string" or backupPath == "" then
-        backupPath = Shared.CONSTANTS.SETTINGS_BACKUP_FILE_PATH
-    end
-    local parsed = readTableFile(backupPath)
-    if type(parsed) ~= "table" then
-        parsed = readTableFile(Shared.CONSTANTS.LEGACY_SETTINGS_BACKUP_FILE_PATH)
-    end
-    if type(parsed) ~= "table" then
-        return false, "no backup found"
-    end
-    Shared.state.settings = {}
-    mergeInto(Shared.state.settings, parsed)
-    Shared.EnsureSettings()
-    return Shared.SaveSettings()
+    return ok, result
 end
 
 return Shared
