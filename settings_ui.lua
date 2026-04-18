@@ -16,6 +16,11 @@ local Shared = loadModule("shared")
 local Schema = loadModule("schema")
 local Pages = loadModule("settings_ui_pages")
 local Compat = loadModule("compat")
+local CreateNuziSlider = nil
+
+pcall(function()
+    CreateNuziSlider = require("nuzi-core/ui/slider")
+end)
 
 local SettingsUi = {
     button = nil,
@@ -709,7 +714,15 @@ local function createSlider(id, parent, text, x, y, minValue, maxValue, options)
     local valueOffset = tonumber(options.value_offset) or (sliderOffset + sliderWidth + 12)
     local label = createLabel(id .. "Label", parent, text, x, y, 13, labelWidth)
     local slider = nil
-    if api._Library ~= nil and api._Library.UI ~= nil and api._Library.UI.CreateSlider ~= nil then
+    if CreateNuziSlider ~= nil then
+        local ok, res = pcall(function()
+            return CreateNuziSlider(id, parent)
+        end)
+        if ok then
+            slider = res
+        end
+    end
+    if slider == nil and api._Library ~= nil and api._Library.UI ~= nil and api._Library.UI.CreateSlider ~= nil then
         local ok, res = pcall(function()
             return api._Library.UI.CreateSlider(id, parent)
         end)
