@@ -17,116 +17,112 @@ local Helpers = loadModule("bar_helpers")
 
 local Role = {}
 
-local function normalize(text)
-    return tostring(text or ""):lower()
-end
-
-local function makeLookup(list)
-    local out = {}
-    for _, name in ipairs(list or {}) do
-        out[normalize(name)] = true
-    end
-    return out
-end
-
-local ROLE_CLASS_MAP = {
-    tank = makeLookup({
-        "Abolisher",
-        "Doomlord",
-        "Nightcloak",
-        "Skullknight",
-        "Templar"
-    }),
-    healer = makeLookup({
-        "Cleric",
-        "Confessor",
-        "Doombringer",
-        "Edgewalker",
-        "Hierophant",
-        "Soothsayer"
-    }),
-    melee = makeLookup({
-        "Assassin",
-        "Blade Dancer",
-        "Blighter",
-        "Bloodreaver",
-        "Darkrunner",
-        "Deathwish",
-        "Enforcer",
-        "Executioner",
-        "Hexblade",
-        "Infiltrator",
-        "Outrider",
-        "Ravager",
-        "Shadowblade",
-        "Shadowplay",
-        "Shadowsong"
-    }),
-    ranged = makeLookup({
-        "Ebonsong",
-        "Gunslinger",
-        "Hawksong",
-        "Primeval",
-        "Ranger",
-        "Shadehunter",
-        "Stone Arrow",
-        "Trickster"
-    }),
-    magic = makeLookup({
-        "Arcanist",
-        "Daggerspell",
-        "Demonologist",
-        "Dreambreaker",
-        "Enigmatist",
-        "Fanatic",
-        "Reaper",
-        "Revenant",
-        "Sorrowsong",
-        "Spellsinger"
-    })
-}
-
-function Role.GetRoleForClass(className)
-    local key = normalize(className)
-    if key == "" then
+local function mapTeamRoleId(roleId)
+    local value = tonumber(roleId)
+    if value == nil then
         return nil
     end
-    for roleName, lookup in pairs(ROLE_CLASS_MAP) do
-        if lookup[key] then
-            return roleName
+    if value == 1 then
+        return "defender"
+    elseif value == 2 then
+        return "healer"
+    elseif value == 3 then
+        return "attacker"
+    end
+    return "undecided"
+end
+
+local function getUnitName(unit)
+    if api.Unit == nil then
+        return ""
+    end
+    if api.Unit.UnitName ~= nil then
+        local name = tostring(api.Unit:UnitName(unit) or "")
+        if name ~= "" then
+            return name
         end
     end
-    return nil
+    if api.Unit.GetUnitId == nil or api.Unit.GetUnitNameById == nil then
+        return ""
+    end
+    local unitId = api.Unit:GetUnitId(unit)
+    if unitId == nil then
+        return ""
+    end
+    return tostring(api.Unit:GetUnitNameById(unitId) or "")
+end
+
+local function getTeamMemberIndexForUnit(unit)
+    if api.Team == nil or api.Team.GetRole == nil then
+        return nil, false
+    end
+
+    local token = tostring(unit or "")
+    local memberIndex = tonumber(token:match("^team(%d+)$"))
+    if memberIndex ~= nil and memberIndex > 0 then
+        return memberIndex, false
+    end
+
+    if token == "player" and api.Team.GetTeamPlayerIndex ~= nil then
+        local playerIndex = tonumber(api.Team:GetTeamPlayerIndex())
+        if playerIndex ~= nil and playerIndex > 0 then
+            return playerIndex, false
+        end
+        return nil, false
+    end
+
+    if api.Team.GetMemberIndexByName == nil or api.Unit == nil or api.Unit.UnitIsTeamMember == nil then
+        return nil, false
+    end
+    if api.Unit:UnitIsTeamMember(unit) ~= true then
+        return nil, false
+    end
+
+    local unitName = getUnitName(unit)
+    if unitName == "" then
+        return nil, true
+    end
+
+    local namedIndex = tonumber(api.Team:GetMemberIndexByName(unitName))
+    if namedIndex ~= nil and namedIndex > 0 then
+        return namedIndex, false
+    end
+    return nil, true
+end
+
+local function getTeamRoleForUnit(unit)
+    local memberIndex, shouldRetry = getTeamMemberIndexForUnit(unit)
+    if memberIndex == nil or api.Team == nil or api.Team.GetRole == nil then
+        return nil, nil, shouldRetry
+    end
+    local role = mapTeamRoleId(api.Team:GetRole(memberIndex))
+    if role == nil then
+        return nil, nil, true
+    end
+    return role, "team:" .. tostring(memberIndex), false
 end
 
 function Role.GetRoleForUnit(unit)
-    local className = ""
-    pcall(function()
-        if api.Ability ~= nil and api.Ability.GetUnitClassName ~= nil then
-            className = api.Ability:GetUnitClassName(unit) or ""
-        end
-    end)
-    if className == "" then
-        pcall(function()
-            if api.Unit ~= nil and api.Unit.UnitClass ~= nil then
-                className = api.Unit:UnitClass(unit) or ""
-            end
-        end)
-    end
-    return Role.GetRoleForClass(className), className
+    return getTeamRoleForUnit(unit)
 end
 
 function Role.GetRoleLetter(role)
     if role == "tank" then
         return "T"
+    elseif role == "defender" then
+        return "D"
     elseif role == "healer" then
         return "H"
+    elseif role == "attacker" then
+        return "A"
     elseif role == "melee" then
         return "M"
     elseif role == "ranged" then
         return "R"
     elseif role == "magic" then
         return "X"
+    elseif role == "undecided" then
+        return "U"
     end
     return "D"
 end
@@ -134,14 +130,20 @@ end
 function Role.GetRoleColor(role)
     if role == "tank" then
         return { 64, 220, 86, 255 }
+    elseif role == "defender" then
+        return { 255, 210, 70, 255 }
     elseif role == "healer" then
         return { 255, 110, 196, 255 }
+    elseif role == "attacker" then
+        return { 255, 88, 88, 255 }
     elseif role == "melee" then
         return { 255, 88, 88, 255 }
     elseif role == "ranged" then
         return { 255, 187, 64, 255 }
     elseif role == "magic" then
         return { 120, 132, 255, 255 }
+    elseif role == "undecided" then
+        return { 110, 170, 255, 255 }
     end
     return { 255, 88, 88, 255 }
 end
@@ -250,7 +252,7 @@ function Role.Apply(frame, cfg, role)
     local d = ensurePart(frame, "roleIconD")
     Role.Hide(frame)
 
-    if role == "tank" then
+    if role == "tank" or role == "defender" then
         setPart(a, frame, x, y + 1, size, size, color)
         setPart(b, frame, x + 2, y + 3, math.max(2, size - 4), math.max(2, size - 4), { 24, 24, 24, 110 })
     elseif role == "healer" then

@@ -259,8 +259,15 @@ local function hideCcWidgets(frame)
     end
 end
 
-local function shouldTrackCcUnit(unit)
-    return unit == "player" or unit == "target" or unit == "watchtarget"
+local function shouldTrackCcUnit(unit, cfg)
+    local key = tostring(unit or "")
+    if key == "player" or key == "target" or key == "watchtarget" then
+        return true
+    end
+    if type(cfg) ~= "table" or tostring(cfg.cc_tracking_scope or "focus") ~= "raid" then
+        return false
+    end
+    return string.match(key, "^team%d+$") ~= nil
 end
 
 local function normalizeUnitToken(unit)
@@ -843,14 +850,15 @@ local function getCachedUnitStatic(frame, unit, unitId, includeRole, nowMs)
 
     local info = getUnitInfo(unit, unitId)
     local role = type(cached) == "table" and cached.role or nil
-    local className = type(cached) == "table" and cached.class_name or nil
+    local roleDescriptor = type(cached) == "table" and cached.role_descriptor or nil
+    local rolePending = false
     if includeRoleBool and role == nil then
-        role, className = Role.GetRoleForUnit(unit)
+        role, roleDescriptor, rolePending = Role.GetRoleForUnit(unit)
     end
     local nameText = getUnitName(unit, unitId, info)
     local guildText = type(info) == "table" and tostring(info.expeditionName or info.guildName or info.guild or "") or ""
     local needsRetry = info == nil or nameText == "" or guildText == ""
-    if includeRoleBool and tostring(className or "") == "" then
+    if includeRoleBool and rolePending then
         needsRetry = true
     end
     local nextRefreshMs = 0
@@ -868,7 +876,7 @@ local function getCachedUnitStatic(frame, unit, unitId, includeRole, nowMs)
         name_text = nameText,
         guild_text = guildText,
         role = role,
-        class_name = className
+        role_descriptor = roleDescriptor
     }
     frame.cache.unit_static = cached
     return cached
@@ -2364,6 +2372,17 @@ local function updateOne(unit, context)
     if unit == nil then
         return
     end
+    -- The player's own world-attached bar is not useful here because self distance
+    -- is effectively always 0/-1 in this client.
+    if unit == "player" then
+        local frame = Bars.frames[unit]
+        if frame ~= nil and frame.cache ~= nil then
+            frame.cache.data_active = false
+        end
+        setFrameDisplayEnabled(frame, false)
+        fadeOutFrame(frame, context.nowMs)
+        return
+    end
     local settings = context.settings
     local cfg = context.cfg
     local playerForcedCcEffects = nil
@@ -2482,7 +2501,7 @@ local function updateOne(unit, context)
     setBorderVisible(frame.targetGlow, isCurrentTarget, TARGET_GLOW_COLOR)
     setBorderVisible(frame.targetTint, isCurrentTarget, TARGET_TINT_COLOR)
     Role.Apply(frame, cfg, role)
-    if shouldTrackCcUnit(unit) then
+    if shouldTrackCcUnit(unit, cfg) then
         local ccEffects = nil
         if unit == "player" and forceShowPlayerCc then
             ccEffects = playerForcedCcEffects

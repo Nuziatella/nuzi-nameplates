@@ -83,24 +83,6 @@ local function bindStyleSlider(ctx, item, slider, value)
     end)
 end
 
-local function bindColorSlider(ctx, colorKey, channelIndex, slider, value)
-    if slider == nil or slider.SetHandler == nil then
-        return
-    end
-    slider:SetHandler("OnSliderChanged", function(_, raw)
-        local style = ctx.Shared.GetStyleSettings()
-        if type(style[colorKey]) ~= "table" then
-            style[colorKey] = { 255, 255, 255, 255 }
-        end
-        local n = math.floor((tonumber(raw) or 0) + 0.5)
-        style[colorKey][channelIndex] = n
-        if value ~= nil and value.SetText ~= nil then
-            value:SetText(tostring(n))
-        end
-        ctx.applyChanges()
-    end)
-end
-
 local function addSection(ctx, page, wnd, id, title, hint, x, y, width)
     local titleLabel = ctx.createLabel(id .. "Title", wnd, title, x, y, 15, width or 260)
     ctx.addPageWidget(page, titleLabel)
@@ -368,20 +350,26 @@ function Pages.BuildCcPage(ctx, wnd)
     end
 
     addSection(ctx, "cc", wnd, "ghbCcRules", "Rules", "Anchor and icon count change the overall footprint more than size alone.", 24, 392, 700)
-    for index, item in ipairs(ctx.Schema.CC_CHOICES or {}) do
-        local colX = index == 1 and 24 or 396
-        local label, btn = ctx.createChoiceRow("ghbCcChoice" .. item.key, wnd, item.label, colX, 440, 170)
+    local ccChoices = ctx.Schema.CC_CHOICES or {}
+    local ccChoiceRows = math.max(1, math.ceil(#ccChoices / 2))
+    for index, item in ipairs(ccChoices) do
+        local localIndex = index - 1
+        local colX = (localIndex % 2 == 0) and 24 or 396
+        local rowY = 440 + (math.floor(localIndex / 2) * 34)
+        local label, btn = ctx.createChoiceRow("ghbCcChoice" .. item.key, wnd, item.label, colX, rowY, 170)
         ctx.addPageWidget("cc", label)
         ctx.addPageWidget("cc", btn)
         ctx.SettingsUi.controls["cc_choice_" .. item.key] = btn
         bindStyleChoice(ctx, item, btn)
     end
 
-    addSection(ctx, "cc", wnd, "ghbCcPlacement", "Placement", "Size and offsets decide how close CC sits to the bar and text.", 24, 504, 700)
+    local placementSectionY = 504 + ((ccChoiceRows - 1) * 42)
+    local placementSliderStartY = 552 + ((ccChoiceRows - 1) * 42)
+    addSection(ctx, "cc", wnd, "ghbCcPlacement", "Placement", "Size and offsets decide how close CC sits to the bar and text.", 24, placementSectionY, 700)
     eachSlider(ctx.Schema.CC_SLIDERS or {}, function(index, item)
         local colX = index <= 3 and 24 or 388
         local localIndex = index <= 3 and index or (index - 3)
-        local rowY = 552 + ((localIndex - 1) * 34)
+        local rowY = placementSliderStartY + ((localIndex - 1) * 34)
         local label, slider, value = createTightSlider(ctx, "ghbCcSlider" .. item.key, wnd, item.label, colX, rowY, item.min, item.max)
         ctx.addPageWidget("cc", label)
         ctx.addPageWidget("cc", slider)
@@ -394,11 +382,12 @@ end
 
 function Pages.BuildColorsPage(ctx, wnd)
     ctx.addPageWidget("colors", ctx.createLabel("ghbColorTitle", wnd, "Colors", 24, 98, 16, 220))
-    ctx.addPageWidget("colors", ctx.createLabel("ghbColorHint", wnd, "Tune bar and text colors here. Presets leave this palette alone.", 24, 122, 12, 640))
+    ctx.addPageWidget("colors", ctx.createLabel("ghbColorHint", wnd, "Tune bars and text without losing existing saved palettes. Click any swatch to edit a single color.", 24, 122, 12, 680))
+    ctx.addPageWidget("colors", ctx.createLabel("ghbColorHint2", wnd, "Presets leave colors alone. Reset only changes the one color you press it on.", 24, 144, 12, 680))
 
-    local prevBtn = ctx.createButton("ghbColorsPrev", wnd, "<", 544, 96, 34, 26)
-    local nextBtn = ctx.createButton("ghbColorsNext", wnd, ">", 686, 96, 34, 26)
-    local pageLabel = ctx.createLabel("ghbColorsPage", wnd, "Page 1 / 1", 586, 100, 12, 94)
+    local prevBtn = ctx.createButton("ghbColorsPrev", wnd, "<", 548, 96, 34, 26)
+    local nextBtn = ctx.createButton("ghbColorsNext", wnd, ">", 688, 96, 34, 26)
+    local pageLabel = ctx.createLabel("ghbColorsPage", wnd, "Page 1 / 1", 590, 100, 12, 92)
     ctx.addPageWidget("colors", prevBtn)
     ctx.addPageWidget("colors", nextBtn)
     ctx.addPageWidget("colors", pageLabel)
@@ -406,12 +395,17 @@ function Pages.BuildColorsPage(ctx, wnd)
     ctx.SettingsUi.controls.color_next = nextBtn
     ctx.SettingsUi.controls.color_page_label = pageLabel
 
-    local groupsPerPage = 4
+    local groupsPerPage = 6
+    ctx.SettingsUi.color_page = 1
     ctx.SettingsUi.color_page_count = math.max(1, math.ceil(#ctx.Schema.COLOR_GROUPS / groupsPerPage))
     ctx.SettingsUi.color_group_widgets = {}
+    ctx.SettingsUi.color_cards = {}
 
     if prevBtn ~= nil and prevBtn.SetHandler ~= nil then
         prevBtn:SetHandler("OnClick", function()
+            if ctx.closeColorPicker ~= nil then
+                ctx.closeColorPicker(true)
+            end
             ctx.SettingsUi.color_page = math.max(1, (ctx.SettingsUi.color_page or 1) - 1)
             if ctx.SettingsUi.Refresh ~= nil then
                 ctx.SettingsUi.Refresh()
@@ -420,6 +414,9 @@ function Pages.BuildColorsPage(ctx, wnd)
     end
     if nextBtn ~= nil and nextBtn.SetHandler ~= nil then
         nextBtn:SetHandler("OnClick", function()
+            if ctx.closeColorPicker ~= nil then
+                ctx.closeColorPicker(true)
+            end
             ctx.SettingsUi.color_page = math.min(ctx.SettingsUi.color_page_count or 1, (ctx.SettingsUi.color_page or 1) + 1)
             if ctx.SettingsUi.Refresh ~= nil then
                 ctx.SettingsUi.Refresh()
@@ -433,34 +430,21 @@ function Pages.BuildColorsPage(ctx, wnd)
         local col = (pageIndex - 1) % 2
         local row = math.floor((pageIndex - 1) / 2)
         local colX = col == 0 and 24 or 388
-        local baseY = 176 + (row * 214)
+        local baseY = 184 + (row * 172)
+        local card = ctx.createColorCard(group, wnd, colX, baseY, 334, 154)
         local groupWidgets = {}
-
-        local title = ctx.createLabel("ghbColorGroup" .. group.key, wnd, group.label, colX, baseY, 15, 240)
-        table.insert(groupWidgets, title)
-        ctx.addPageWidget("colors", title)
-        local channels = {
-            { suffix = "R", index = 1, label = "Red" },
-            { suffix = "G", index = 2, label = "Green" },
-            { suffix = "B", index = 3, label = "Blue" }
-        }
-        for channelOffset, channel in ipairs(channels) do
-            local y = baseY + 34 + ((channelOffset - 1) * 38)
-            local label, slider, value = createTightSlider(ctx, "ghbColorSlider" .. group.key .. channel.suffix, wnd, channel.label, colX, y, 0, 255)
-            table.insert(groupWidgets, label)
-            table.insert(groupWidgets, slider)
-            table.insert(groupWidgets, value)
-            ctx.addPageWidget("colors", label)
-            ctx.addPageWidget("colors", slider)
-            ctx.addPageWidget("colors", value)
-            ctx.SettingsUi.controls["color_slider_" .. group.key .. "_" .. channel.index] = slider
-            ctx.SettingsUi.controls["color_slider_val_" .. group.key .. "_" .. channel.index] = value
-            bindColorSlider(ctx, group.key, channel.index, slider, value)
+        if card ~= nil and card.root ~= nil then
+            groupWidgets[1] = card.root
+            ctx.addPageWidget("colors", card.root)
         end
         ctx.SettingsUi.color_group_widgets[group.key] = {
             page = page,
             widgets = groupWidgets
         }
+    end
+
+    if ctx.ensureColorPicker ~= nil then
+        ctx.ensureColorPicker(wnd)
     end
 end
 

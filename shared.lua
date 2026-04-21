@@ -74,6 +74,7 @@ local function styleDefaults()
         show_cc_slow = true,
         show_cc_dot = true,
         show_cc_misc = true,
+        cc_tracking_scope = "focus",
         cc_anchor = "top",
         cc_max_icons = 4,
         cc_icon_size = 45,

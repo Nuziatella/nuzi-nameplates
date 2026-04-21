@@ -98,6 +98,14 @@ Schema.CC_TOGGLES = {
 
 Schema.CC_CHOICES = {
     {
+        key = "cc_tracking_scope",
+        label = "Tracking",
+        options = {
+            { value = "focus", label = "3 units" },
+            { value = "raid", label = "Full raid" }
+        }
+    },
+    {
         key = "cc_anchor",
         label = "Anchor",
         options = {
@@ -128,16 +136,16 @@ Schema.CC_SLIDERS = {
 }
 
 Schema.COLOR_GROUPS = {
-    { key = "hp_bar_color", label = "HP bar" },
-    { key = "hostile_bar_color", label = "Hostile HP" },
-    { key = "neutral_bar_color", label = "Neutral HP" },
-    { key = "mp_bar_color", label = "MP bar" },
-    { key = "bloodlust_team_color", label = "Bloodlust team" },
-    { key = "bloodlust_target_color", label = "Bloodlust target" },
-    { key = "name_color", label = "Name text" },
-    { key = "guild_color", label = "Guild text" },
-    { key = "value_color", label = "HP/MP text" },
-    { key = "distance_color", label = "Distance text" }
+    { key = "hp_bar_color", label = "HP bar", description = "Friendly team HP fill.", preview = "bar" },
+    { key = "hostile_bar_color", label = "Hostile HP", description = "Enemy target HP fill.", preview = "bar" },
+    { key = "neutral_bar_color", label = "Neutral HP", description = "Neutral target HP fill.", preview = "bar" },
+    { key = "mp_bar_color", label = "MP bar", description = "Mana and resource fill.", preview = "bar" },
+    { key = "bloodlust_team_color", label = "Bloodlust team", description = "Friendly bloodlust state.", preview = "bar" },
+    { key = "bloodlust_target_color", label = "Bloodlust target", description = "Target bloodlust state.", preview = "bar" },
+    { key = "name_color", label = "Name text", description = "Main character name label.", preview = "text" },
+    { key = "guild_color", label = "Guild text", description = "Guild or family tag.", preview = "text" },
+    { key = "value_color", label = "HP/MP text", description = "Value and percent text.", preview = "text" },
+    { key = "distance_color", label = "Distance text", description = "Range label.", preview = "text" }
 }
 
 Schema.STYLE_CHOICES = {
@@ -203,6 +211,7 @@ Schema.STYLE_PRESETS = {
             show_cc = true,
             show_cc_timer = true,
             show_cc_secondary = true,
+            cc_tracking_scope = "raid",
             cc_anchor = "top",
             cc_max_icons = 4,
             cc_icon_size = 42,

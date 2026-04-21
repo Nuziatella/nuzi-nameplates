@@ -77,4 +77,4 @@ You can:
 
 ## Version
 
-Current version: `1.5.42`
+Current version: `1.5.44`
