@@ -41,7 +41,7 @@ local Compat = modules.compat
 local addon = {
     name = "Gharka Bars",
     author = "Nuzi",
-    version = "1.5.46",
+    version = "1.5.47",
     desc = "Overhead raid bars"
 }
 

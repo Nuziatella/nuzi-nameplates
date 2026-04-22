@@ -185,9 +185,8 @@ local store = Settings.CreateAddonStore(Shared.CONSTANTS, {
     read_mode = "serialized_then_flat",
     write_mode = "serialized_then_flat",
     read_raw_text_fallback = true,
-    write_mirror_paths = {
-        Shared.CONSTANTS.LEGACY_SETTINGS_FILE_PATH
-    },
+    use_api_settings = false,
+    save_global_settings = false,
     backups = {
         read_mode = "serialized_then_flat",
         write_mode = "serialized_then_flat",

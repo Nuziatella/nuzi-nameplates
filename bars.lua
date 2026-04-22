@@ -2372,17 +2372,6 @@ local function updateOne(unit, context)
     if unit == nil then
         return
     end
-    -- The player's own world-attached bar is not useful here because self distance
-    -- is effectively always 0/-1 in this client.
-    if unit == "player" then
-        local frame = Bars.frames[unit]
-        if frame ~= nil and frame.cache ~= nil then
-            frame.cache.data_active = false
-        end
-        setFrameDisplayEnabled(frame, false)
-        fadeOutFrame(frame, context.nowMs)
-        return
-    end
     local settings = context.settings
     local cfg = context.cfg
     local playerForcedCcEffects = nil
@@ -2450,6 +2439,7 @@ local function updateOne(unit, context)
     local static = getCachedUnitStatic(frame, unit, unitId, cfg.show_role, context.nowMs)
     local info = static ~= nil and static.info or nil
     local nameText = static ~= nil and tostring(static.name_text or "") or ""
+    local showDistanceText = cfg.show_distance and unit ~= "player" and type(distance) == "number"
     if nameText == "" then
         frame.cache.data_active = true
         setFrameDisplayEnabled(frame, false)
@@ -2476,7 +2466,7 @@ local function updateOne(unit, context)
     updateCachedText(frame, "guild", frame.guildLabel, displayGuildText)
     updateCachedText(frame, "hpText", frame.hpValueLabel, Helpers.FormatValueText(cfg.value_mode, hp, hpMax))
     updateCachedText(frame, "mpText", frame.mpValueLabel, Helpers.FormatValueText(cfg.value_mode, mp, mpMax))
-    updateCachedText(frame, "distText", frame.distanceLabel, cfg.show_distance and type(distance) == "number" and string.format("%.0fm", distance) or "")
+    updateCachedText(frame, "distText", frame.distanceLabel, showDistanceText and string.format("%.0fm", distance) or "")
     updateStatusBar(frame, "hp", frame.hpBar, hp, hpMax)
     updateStatusBar(frame, "mp", frame.mpBar, mp, mpMax)
     updateHpBarColor(frame, unit, unitId, cfg, info, hp, hpMax, context.nowMs)
@@ -2491,7 +2481,7 @@ local function updateOne(unit, context)
     Helpers.SafeShow(frame.roleLabel, false)
     Helpers.SafeShow(frame.hpValueLabel, cfg.show_hp_text ~= false)
     Helpers.SafeShow(frame.mpValueLabel, cfg.show_mp_text and cfg.show_mp_bar and mpMax > 0)
-    Helpers.SafeShow(frame.distanceLabel, cfg.show_distance and type(distance) == "number")
+    Helpers.SafeShow(frame.distanceLabel, showDistanceText)
     local showMpBar = cfg.show_mp_bar and clamp(cfg.mp_height, 0, 26, 5) > 0 and mpMax > 0
     Helpers.SafeShow(frame.mpBar, showMpBar)
     if Layout ~= nil and Layout.AnchorTargetGlow ~= nil and frame.cache.target_glow_mp ~= showMpBar then
