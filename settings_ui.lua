@@ -357,14 +357,14 @@ local function readOffset(widget)
     end
     local ok = false
     local x, y = nil, nil
-    if widget.GetEffectiveOffset ~= nil then
-        ok, x, y = pcall(function()
-            return widget:GetEffectiveOffset()
-        end)
-    end
-    if (not ok or x == nil or y == nil) and widget.GetOffset ~= nil then
+    if widget.GetOffset ~= nil then
         ok, x, y = pcall(function()
             return widget:GetOffset()
+        end)
+    end
+    if (not ok or x == nil or y == nil) and widget.GetEffectiveOffset ~= nil then
+        ok, x, y = pcall(function()
+            return widget:GetEffectiveOffset()
         end)
     end
     if not ok then

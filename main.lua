@@ -41,7 +41,7 @@ local Compat = modules.compat
 local addon = {
     name = "Gharka Bars",
     author = "Nuzi",
-    version = "1.5.47",
+    version = "1.5.48",
     desc = "Overhead raid bars"
 }
 
@@ -60,13 +60,17 @@ local updateLoops = Scheduler.CreateMultiLoop({
             interval_ms = 16,
             max_elapsed_ms = 192
         },
-        hot_data = {
-            interval_ms = 33,
-            max_elapsed_ms = 198
+        focus_data = {
+            interval_ms = 66,
+            max_elapsed_ms = 264
+        },
+        visible_data = {
+            interval_ms = 100,
+            max_elapsed_ms = 400
         },
         bulk_data = {
-            interval_ms = 220,
-            max_elapsed_ms = 1320
+            interval_ms = 300,
+            max_elapsed_ms = 1500
         }
     }
 })
@@ -154,8 +158,22 @@ local function updateBulkPositions()
 end
 
 local function updateHotData()
-    safeBarsCall("Bars.UpdateHotData", function()
-        Bars.UpdateHotData()
+    safeBarsCall("Bars.UpdateFocusData", function()
+        if Bars.UpdateFocusData ~= nil then
+            Bars.UpdateFocusData()
+        else
+            Bars.UpdateHotData()
+        end
+    end)
+end
+
+local function updateVisibleData()
+    safeBarsCall("Bars.UpdateVisibleData", function()
+        if Bars.UpdateVisibleData ~= nil then
+            Bars.UpdateVisibleData()
+        else
+            Bars.UpdateHotData()
+        end
     end)
 end
 
@@ -167,7 +185,8 @@ end
 
 updateLoops:Get("visible_positions").callback = updateVisiblePositions
 updateLoops:Get("bulk_positions").callback = updateBulkPositions
-updateLoops:Get("hot_data").callback = updateHotData
+updateLoops:Get("focus_data").callback = updateHotData
+updateLoops:Get("visible_data").callback = updateVisibleData
 updateLoops:Get("bulk_data").callback = updateBulkData
 
 local function getPlayerName()
@@ -255,6 +274,17 @@ local function onChatMessage(channel, unit, isHostile, name, message)
     return commandRouter:DispatchMessage(message, name, unit)
 end
 
+local function onTeamChanged()
+    if not modulesReady() then
+        return
+    end
+    if Bars.InvalidateUnitCaches ~= nil then
+        safeBarsCall("Bars.InvalidateUnitCaches", function()
+            Bars.InvalidateUnitCaches()
+        end)
+    end
+end
+
 local function onLoad()
     if not modulesReady() then
         logModuleErrors()
@@ -280,7 +310,7 @@ local function onLoad()
     events:OnSafe("UPDATE", "UPDATE", onUpdate)
     events:OnSafe("UI_RELOADED", "UI_RELOADED", onUiReloaded)
     events:OnSafe("CHAT_MESSAGE", "CHAT_MESSAGE", onChatMessage)
-    events:OptionalOnSafe("COMMUNITY_CHAT_MESSAGE", "COMMUNITY_CHAT_MESSAGE", onChatMessage)
+    events:OnSafe("TEAM_MEMBERS_CHANGED", "TEAM_MEMBERS_CHANGED", onTeamChanged)
     logger:Info("Loaded v" .. tostring(addon.version) .. ". Use the GB button for settings.")
 end
 

@@ -69,8 +69,8 @@ local HOSTILE_TEXT_COLOR = { 255, 244, 244, 255 }
 local NEUTRAL_TEXT_COLOR = { 40, 28, 0, 255 }
 local CC_SCAN_INTERVAL_MS = 250
 local CC_EXTRA_ICON_COUNT = 3
-local HOT_UNIT_STATIC_REFRESH_MS = 0
-local BULK_UNIT_STATIC_REFRESH_MS = 0
+local HOT_UNIT_STATIC_REFRESH_MS = 1000
+local BULK_UNIT_STATIC_REFRESH_MS = 5000
 local BULK_UNIT_STATIC_JITTER_MS = 2400
 local INCOMPLETE_STATIC_REFRESH_MS = 900
 local FRAME_FADE_DURATION_MS = 140
@@ -852,8 +852,19 @@ local function getCachedUnitStatic(frame, unit, unitId, includeRole, nowMs)
     local role = type(cached) == "table" and cached.role or nil
     local roleDescriptor = type(cached) == "table" and cached.role_descriptor or nil
     local rolePending = false
-    if includeRoleBool and role == nil then
-        role, roleDescriptor, rolePending = Role.GetRoleForUnit(unit)
+    local cachedRolePending = type(cached) == "table" and cached.role_pending == true
+    if includeRoleBool then
+        if role == nil or cachedRolePending then
+            local refreshedRole, refreshedDescriptor, pending = Role.GetRoleForUnit(unit)
+            rolePending = pending and true or false
+            if refreshedRole ~= nil then
+                role = refreshedRole
+                roleDescriptor = refreshedDescriptor
+            end
+        end
+    else
+        role = nil
+        roleDescriptor = nil
     end
     local nameText = getUnitName(unit, unitId, info)
     local guildText = type(info) == "table" and tostring(info.expeditionName or info.guildName or info.guild or "") or ""
@@ -876,7 +887,8 @@ local function getCachedUnitStatic(frame, unit, unitId, includeRole, nowMs)
         name_text = nameText,
         guild_text = guildText,
         role = role,
-        role_descriptor = roleDescriptor
+        role_descriptor = roleDescriptor,
+        role_pending = rolePending
     }
     frame.cache.unit_static = cached
     return cached
@@ -1239,7 +1251,7 @@ local function buildLiveBulkUnitBuckets(includeRecentShown)
 end
 
 local function getBulkPositionIntervalMs()
-    local activeCount = #buildLiveBulkUnitBuckets(false).active
+    local activeCount = #Bars.active_bulk_unit_keys
     if activeCount >= 36 then
         return BULK_POSITION_INTERVAL_XL_MS
     end
@@ -2654,6 +2666,7 @@ end
 
 local function updatePositionsForUnits(unitKeys, settings, cfg, positionSources, renderOwners)
     local nowMs = safeUiNowMs()
+    local targetUnitId = getCurrentTargetUnitId()
     local entries = {}
     for _, unit in ipairs(unitKeys or {}) do
         local frame = Bars.frames[unit]
@@ -2685,7 +2698,7 @@ local function updatePositionsForUnits(unitKeys, settings, cfg, positionSources,
                         screen_y = tonumber(screenY) or 0,
                         raw_x = tonumber(screenX) or 0,
                         raw_y = tonumber(screenY) or 0,
-                        is_current_target = tostring(frame.__ghb_unit_id or "") == tostring(getCurrentTargetUnitId() or ""),
+                        is_current_target = tostring(frame.__ghb_unit_id or "") == tostring(targetUnitId or ""),
                         width = tonumber(frame.cache.frame_width) or clamp(cfg.width, 80, 320, 156),
                         height = tonumber(frame.cache.frame_height) or 48,
                         now_ms = nowMs
@@ -2710,7 +2723,6 @@ local function updatePositionsForUnits(unitKeys, settings, cfg, positionSources,
     end
 
     local clusters = buildClusters(entries, clusterConfig)
-    local targetUnitId = getCurrentTargetUnitId()
     for clusterIndex, cluster in ipairs(clusters) do
         applyClusterLayout(cluster, clusterConfig, targetUnitId, Bars.hovered_unit, tostring(clusterIndex))
     end
@@ -2753,7 +2765,7 @@ local function updateDiscoveryPositions(settings, cfg)
     updatePositionsForUnits(units, settings, cfg, Bars.position_sources, Bars.render_owners)
 end
 
-local function updateVisibleData(settings, cfg)
+local function updateFocusData(settings, cfg)
     local units = {}
     local seen = {}
     for _, unit in ipairs(Bars.hot_unit_keys or {}) do
@@ -2762,13 +2774,65 @@ local function updateVisibleData(settings, cfg)
             units[#units + 1] = unit
         end
     end
-    local shownBulkUnits = buildShownActiveBulkUnitKeys()
-    local batchSize = getVisibleBulkDataBatchSize(#shownBulkUnits)
-    local visibleSeen = {}
-    appendList(units, collectRoundRobinUnits(shownBulkUnits, "visible_bulk_cursor", batchSize, visibleSeen))
     local context = buildContext(settings, cfg, units)
     context.include_position = false
     updateUnits(units, context)
+end
+
+local function updateVisibleBulkData(settings, cfg)
+    local shownBulkUnits = buildShownActiveBulkUnitKeys()
+    local batchSize = getVisibleBulkDataBatchSize(#shownBulkUnits)
+    if batchSize <= 0 then
+        return
+    end
+    local visibleSeen = {}
+    local units = collectRoundRobinUnits(shownBulkUnits, "visible_bulk_cursor", batchSize, visibleSeen)
+    if #units <= 0 then
+        return
+    end
+    local context = buildContext(settings, cfg, units)
+    context.include_position = false
+    updateUnits(units, context)
+end
+
+local function invalidateFrameUnitCache(frame)
+    if frame == nil or frame.cache == nil then
+        return
+    end
+    frame.cache.distance_next_refresh_ms = 0
+    frame.cache.bloodlust_next_scan_ms = 0
+end
+
+function Bars.InvalidateUnitCaches()
+    Bars.unit_id_cache = {}
+    Bars.render_owners = {}
+    Bars.position_sources = {}
+    Bars.active_bulk_unit_keys = {}
+    Bars.owner_source_last_build_ms = 0
+    for _, frame in pairs(Bars.frames or {}) do
+        invalidateFrameUnitCache(frame)
+    end
+end
+
+function Bars.UpdateFocusData()
+    local settings, cfg = prepareUpdateState()
+    if settings == nil then
+        return
+    end
+    updateFocusData(settings, cfg)
+end
+
+function Bars.UpdateVisibleData()
+    local settings, cfg = prepareUpdateState()
+    if settings == nil then
+        return
+    end
+    updateVisibleBulkData(settings, cfg)
+end
+
+local function updateCombinedVisibleData(settings, cfg)
+    updateFocusData(settings, cfg)
+    updateVisibleBulkData(settings, cfg)
 end
 
 function Bars.Update()
@@ -2788,7 +2852,7 @@ function Bars.UpdateHotData()
     if settings == nil then
         return
     end
-    updateVisibleData(settings, cfg)
+    updateCombinedVisibleData(settings, cfg)
 end
 
 function Bars.UpdateBulkData()
