@@ -148,12 +148,7 @@ end
 
 local function isShiftDown()
     if api ~= nil and api.Input ~= nil and api.Input.IsShiftKeyDown ~= nil then
-        local ok, down = pcall(function()
-            return api.Input:IsShiftKeyDown()
-        end)
-        if ok then
-            return down and true or false
-        end
+        return api.Input:IsShiftKeyDown() and true or false
     end
     return false
 end

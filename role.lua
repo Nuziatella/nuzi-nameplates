@@ -32,7 +32,25 @@ local function mapTeamRoleId(roleId)
     return "undecided"
 end
 
+local function normalizeUnitToken(unit)
+    if type(unit) ~= "string" then
+        return nil
+    end
+    local text = tostring(unit or "")
+    if text == "" then
+        return nil
+    end
+    if text == "targetoftarget" or text == "target_of_target" then
+        return "targettarget"
+    end
+    return text
+end
+
 local function getUnitName(unit)
+    unit = normalizeUnitToken(unit)
+    if unit == nil then
+        return ""
+    end
     if api.Unit == nil then
         return ""
     end
@@ -53,11 +71,15 @@ local function getUnitName(unit)
 end
 
 local function getTeamMemberIndexForUnit(unit)
+    unit = normalizeUnitToken(unit)
+    if unit == nil then
+        return nil, false
+    end
     if api.Team == nil or api.Team.GetRole == nil then
         return nil, false
     end
 
-    local token = tostring(unit or "")
+    local token = unit
     local memberIndex = tonumber(token:match("^team(%d+)$"))
     if memberIndex ~= nil and memberIndex > 0 then
         return memberIndex, false
@@ -74,7 +96,8 @@ local function getTeamMemberIndexForUnit(unit)
     if api.Team.GetMemberIndexByName == nil or api.Unit == nil or api.Unit.UnitIsTeamMember == nil then
         return nil, false
     end
-    if api.Unit:UnitIsTeamMember(unit) ~= true then
+    local isTeamMember = api.Unit:UnitIsTeamMember(unit) == true
+    if isTeamMember ~= true then
         return nil, false
     end
 

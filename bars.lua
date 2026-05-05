@@ -67,6 +67,8 @@ local CC_DISPEL_SLOT_COLOR = { 0.7059, 0.2824, 1, 1 }
 local BLOODLUST_BUFF_ID = 1482
 local HOSTILE_TEXT_COLOR = { 255, 244, 244, 255 }
 local NEUTRAL_TEXT_COLOR = { 40, 28, 0, 255 }
+local HP_GRADIENT_LOW_COLOR = { 255, 0, 0, 255 }
+local HP_GRADIENT_HIGH_COLOR = { 46, 122, 240, 255 }
 local CC_SCAN_INTERVAL_MS = 250
 local CC_EXTRA_ICON_COUNT = 3
 local HOT_UNIT_STATIC_REFRESH_MS = 1000
@@ -74,8 +76,8 @@ local BULK_UNIT_STATIC_REFRESH_MS = 5000
 local BULK_UNIT_STATIC_JITTER_MS = 2400
 local INCOMPLETE_STATIC_REFRESH_MS = 900
 local FRAME_FADE_DURATION_MS = 140
-local POSITION_LOSS_GRACE_MS = 220
-local PLAYER_POSITION_LOSS_GRACE_MS = 320
+local POSITION_LOSS_GRACE_MS = 64
+local PLAYER_POSITION_LOSS_GRACE_MS = 96
 local RECENTLY_VISIBLE_POSITION_GRACE_MS = 500
 local DISTANCE_HIDE_GRACE_MS = 180
 local DISTANCE_HIDE_HYSTERESIS_M = 6
@@ -120,12 +122,7 @@ local function safeUiNowMs()
     if api.Time == nil or api.Time.GetUiMsec == nil then
         return 0
     end
-    local ok, value = pcall(function()
-        return api.Time:GetUiMsec()
-    end)
-    if not ok then
-        return 0
-    end
+    local value = api.Time:GetUiMsec()
     return tonumber(value) or 0
 end
 
@@ -299,12 +296,7 @@ end
 
 local function isShiftDown()
     if api ~= nil and api.Input ~= nil and api.Input.IsShiftKeyDown ~= nil then
-        local ok, value = pcall(function()
-            return api.Input:IsShiftKeyDown()
-        end)
-        if ok then
-            return value and true or false
-        end
+        return api.Input:IsShiftKeyDown() and true or false
     end
     return false
 end
@@ -312,20 +304,7 @@ end
 local function isCtrlDown()
     if api ~= nil and api.Input ~= nil then
         if api.Input.IsControlKeyDown ~= nil then
-            local ok, value = pcall(function()
-                return api.Input:IsControlKeyDown()
-            end)
-            if ok then
-                return value and true or false
-            end
-        end
-        if api.Input.IsCtrlKeyDown ~= nil then
-            local ok, value = pcall(function()
-                return api.Input:IsCtrlKeyDown()
-            end)
-            if ok then
-                return value and true or false
-            end
+            return api.Input:IsControlKeyDown() and true or false
         end
     end
     return false
@@ -517,10 +496,11 @@ local function queryUnitId(unit)
     if api == nil or api.Unit == nil or api.Unit.GetUnitId == nil then
         return nil
     end
-    local unitId = nil
-    pcall(function()
-        unitId = api.Unit:GetUnitId(unit)
-    end)
+    unit = normalizeUnitToken(unit)
+    if unit == nil then
+        return nil
+    end
+    local unitId = api.Unit:GetUnitId(unit)
     return normalizeUnitId(unitId)
 end
 
@@ -528,10 +508,7 @@ local function queryUnitDistance(unit)
     if api.Unit == nil or api.Unit.UnitDistance == nil then
         return nil
     end
-    local distance = nil
-    pcall(function()
-        distance = api.Unit:UnitDistance(unit)
-    end)
+    local distance = api.Unit:UnitDistance(unit)
     if type(distance) ~= "number" then
         return nil
     end
@@ -780,17 +757,14 @@ end
 
 local function getUnitInfo(unit, unitId)
     local normalizedId = normalizeUnitId(unitId)
+    local normalizedUnit = normalizeUnitToken(unit)
     local liveInfo = nil
-    if api.Unit.UnitInfo ~= nil then
-        pcall(function()
-            liveInfo = api.Unit:UnitInfo(unit)
-        end)
+    if normalizedUnit ~= nil and api.Unit.UnitInfo ~= nil then
+        liveInfo = api.Unit:UnitInfo(normalizedUnit)
     end
     local info = nil
     if normalizedId ~= nil and (type(liveInfo) ~= "table" or getGuildNameFromInfo(liveInfo) == "") then
-        pcall(function()
-            info = api.Unit:GetUnitInfoById(normalizedId)
-        end)
+        info = api.Unit:GetUnitInfoById(normalizedId)
     end
     if type(liveInfo) == "table" then
         if type(info) == "table" then
@@ -810,19 +784,16 @@ end
 
 local function getUnitName(unit, unitId, info)
     local nameText = ""
-    if api.Unit.UnitName ~= nil then
-        pcall(function()
-            nameText = api.Unit:UnitName(unit) or ""
-        end)
+    local normalizedUnit = normalizeUnitToken(unit)
+    if normalizedUnit ~= nil and api.Unit.UnitName ~= nil then
+        nameText = api.Unit:UnitName(normalizedUnit) or ""
     end
     if nameText == "" and type(info) == "table" then
         nameText = tostring(info.name or info.unitName or "")
     end
     local normalizedId = normalizeUnitId(unitId)
     if nameText == "" and normalizedId ~= nil then
-        pcall(function()
-            nameText = api.Unit:GetUnitNameById(normalizedId) or ""
-        end)
+        nameText = api.Unit:GetUnitNameById(normalizedId) or ""
     end
     return nameText
 end
@@ -1821,6 +1792,30 @@ local function trimText(text, maxChars)
     return string.sub(raw, 1, limit)
 end
 
+local function readHealthValues(unit)
+    local hp = tonumber(api.Unit:UnitHealth(unit))
+    local hpMax = tonumber(api.Unit:UnitMaxHealth(unit))
+    if hp == nil or hpMax == nil or hpMax <= 0 then
+        return nil, nil
+    end
+    hp = clamp(hp, 0, hpMax, 0)
+    return hp, hpMax
+end
+
+local function readManaValues(unit)
+    local mp = tonumber(api.Unit:UnitMana(unit)) or 0
+    local mpMax = tonumber(api.Unit:UnitMaxMana(unit)) or 0
+    if mpMax < 0 then
+        mpMax = 0
+    end
+    if mpMax > 0 then
+        mp = clamp(mp, 0, mpMax, 0)
+    elseif mp < 0 then
+        mp = 0
+    end
+    return mp, mpMax
+end
+
 local function updateStatusBar(frame, prefix, bar, currentValue, maxValue)
     if bar == nil or bar.statusBar == nil then
         return
@@ -1845,15 +1840,9 @@ local function unitHasBuff(unit, buffId)
     if api.Unit == nil or api.Unit.UnitBuffCount == nil or api.Unit.UnitBuff == nil then
         return false
     end
-    local buffCount = 0
-    pcall(function()
-        buffCount = api.Unit:UnitBuffCount(unit) or 0
-    end)
+    local buffCount = api.Unit:UnitBuffCount(unit) or 0
     for index = 1, tonumber(buffCount) or 0 do
-        local buff = nil
-        pcall(function()
-            buff = api.Unit:UnitBuff(unit, index)
-        end)
+        local buff = api.Unit:UnitBuff(unit, index)
         if type(buff) == "table" and tonumber(buff.buff_id) == buffId then
             return true
         end
@@ -1869,11 +1858,7 @@ local function isUnitTeamMember(unit)
     if api.Unit == nil or api.Unit.UnitIsTeamMember == nil then
         return isTeamUnit(unit)
     end
-    local result = false
-    pcall(function()
-        result = api.Unit:UnitIsTeamMember(unit) and true or false
-    end)
-    return result
+    return api.Unit:UnitIsTeamMember(unit) and true or false
 end
 
 local function isBloodlustFriendlyUnit(unit, info)
@@ -1920,7 +1905,23 @@ local function getBarRelation(frame, unit, unitId, info, nowMs)
     return "friendly"
 end
 
-local function getHpBarAppearance(frame, unit, unitId, cfg, info, nowMs)
+local function blendHpGradientColor(currentValue, maxValue)
+    local maxNum = tonumber(maxValue) or 0
+    local pct = 1
+    if maxNum > 0 then
+        pct = clamp((tonumber(currentValue) or 0) / maxNum, 0, 1, 0)
+    end
+    local low = HP_GRADIENT_LOW_COLOR
+    local high = HP_GRADIENT_HIGH_COLOR
+    return {
+        math.floor(low[1] + ((high[1] - low[1]) * pct) + 0.5),
+        math.floor(low[2] + ((high[2] - low[2]) * pct) + 0.5),
+        math.floor(low[3] + ((high[3] - low[3]) * pct) + 0.5),
+        math.floor(low[4] + ((high[4] - low[4]) * pct) + 0.5)
+    }
+end
+
+local function getHpBarAppearance(frame, unit, unitId, cfg, info, currentValue, maxValue, nowMs)
     local relation = getBarRelation(frame, unit, unitId, info, nowMs)
     if relation == "bloodlust" then
         if isUnitTeamMember(unit) then
@@ -1934,6 +1935,9 @@ local function getHpBarAppearance(frame, unit, unitId, cfg, info, nowMs)
     if relation == "neutral" then
         return relation, Helpers.Color01(cfg.neutral_bar_color, { 184, 148, 52, 255 }), NEUTRAL_TEXT_COLOR
     end
+    if cfg.hp_color_mode == "red_blue_gradient" then
+        return relation, Helpers.Color01(blendHpGradientColor(currentValue, maxValue), HP_GRADIENT_HIGH_COLOR), nil
+    end
     return relation, Helpers.Color01(cfg.hp_bar_color, { 220, 46, 46, 255 }), nil
 end
 
@@ -1941,7 +1945,7 @@ local function updateHpBarColor(frame, unit, unitId, cfg, info, currentValue, ma
     if frame == nil or frame.hpBar == nil or frame.hpBar.statusBar == nil then
         return
     end
-    local relation, rgba, textColor = getHpBarAppearance(frame, unit, unitId, cfg, info, nowMs)
+    local relation, rgba, textColor = getHpBarAppearance(frame, unit, unitId, cfg, info, currentValue, maxValue, nowMs)
     local key = table.concat({
         tostring(rgba[1] or ""),
         tostring(rgba[2] or ""),
@@ -2074,18 +2078,10 @@ local function getScreenPosition(frame, unit, settings)
         if not settings.anchor_to_nametag or api.Unit.GetUnitScreenNameTagOffset == nil then
             return nil, nil, nil
         end
-        local x, y, z = nil, nil, nil
-        pcall(function()
-            x, y, z = api.Unit:GetUnitScreenNameTagOffset(unit)
-        end)
-        return x, y, z
+        return api.Unit:GetUnitScreenNameTagOffset(unit)
     end
     local function tryScreen()
-        local x, y, z = nil, nil, nil
-        pcall(function()
-            x, y, z = api.Unit:GetUnitScreenPosition(unit)
-        end)
-        return x, y, z
+        return api.Unit:GetUnitScreenPosition(unit)
     end
 
     local order = {}
@@ -2148,6 +2144,11 @@ local function resolveStableScreenPosition(frame, unit, settings, nowMs, graceUn
     end
 
     local cache = frame.cache
+    if screenZ ~= nil and screenZ < 0 then
+        cache.invalid_screen_since_ms = tonumber(nowMs) or 0
+        return nil, nil, screenZ, false
+    end
+
     if cache.invalid_screen_since_ms == nil then
         cache.invalid_screen_since_ms = tonumber(nowMs) or 0
     end
@@ -2435,16 +2436,14 @@ local function updateOne(unit, context)
         return
     end
 
-    local hp = 0
-    local hpMax = 0
-    local mp = 0
-    local mpMax = 0
-    pcall(function()
-        hp = api.Unit:UnitHealth(unit) or 0
-        hpMax = api.Unit:UnitMaxHealth(unit) or 0
-        mp = api.Unit:UnitMana(unit) or 0
-        mpMax = api.Unit:UnitMaxMana(unit) or 0
-    end)
+    local hp, hpMax = readHealthValues(unit)
+    if hp == nil or hpMax == nil then
+        frame.cache.data_active = true
+        setFrameDisplayEnabled(frame, false)
+        fadeOutFrame(frame, context.nowMs)
+        return
+    end
+    local mp, mpMax = readManaValues(unit)
 
     local isCurrentTarget = context.targetUnitId ~= nil and unitId == context.targetUnitId
 

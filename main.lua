@@ -41,7 +41,7 @@ local Compat = modules.compat
 local addon = {
     name = "Gharka Bars",
     author = "Nuzi",
-    version = "1.5.48",
+    version = "1.5.53",
     desc = "Overhead raid bars"
 }
 
@@ -190,16 +190,10 @@ updateLoops:Get("visible_data").callback = updateVisibleData
 updateLoops:Get("bulk_data").callback = updateBulkData
 
 local function getPlayerName()
-    if api.Unit == nil or api.Unit.GetUnitName == nil then
+    if api.Unit == nil or api.Unit.UnitName == nil then
         return ""
     end
-    local ok, name = pcall(function()
-        return api.Unit:GetUnitName("player")
-    end)
-    if not ok then
-        return ""
-    end
-    return tostring(name or "")
+    return tostring(api.Unit:UnitName("player") or "")
 end
 
 local function onCommand(ctx)

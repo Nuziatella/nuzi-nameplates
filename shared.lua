@@ -9,7 +9,7 @@ local Shared = {}
 Shared.CONSTANTS = {
     ADDON_ID = "gharka-bars",
     TITLE = "Gharka Bars",
-    VERSION = "1.5.44",
+    VERSION = "1.5.53",
     BUTTON_ID = "gharkaBarsSettingsButton",
     WINDOW_ID = "gharkaBarsSettingsWindow",
     SETTINGS_FILE_PATH = "gharka-bars/.data/settings.txt",
@@ -54,6 +54,7 @@ local function styleDefaults()
         distance_offset_x = -16,
         distance_offset_y = 0,
         value_mode = "percent",
+        hp_color_mode = "solid",
         name_layout = "horizontal",
         cluster_spacing_mode = "off",
         target_relation_mode = "legacy",

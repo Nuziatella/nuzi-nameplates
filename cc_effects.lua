@@ -148,12 +148,7 @@ local function safeDebuffCount(unit)
     if api.Unit == nil or api.Unit.UnitDeBuffCount == nil then
         return 0
     end
-    local ok, count = pcall(function()
-        return api.Unit:UnitDeBuffCount(unit)
-    end)
-    if not ok then
-        return 0
-    end
+    local count = api.Unit:UnitDeBuffCount(unit)
     return tonumber(count) or 0
 end
 
@@ -161,10 +156,8 @@ local function safeDebuff(unit, index)
     if api.Unit == nil or api.Unit.UnitDeBuff == nil then
         return nil
     end
-    local ok, debuff = pcall(function()
-        return api.Unit:UnitDeBuff(unit, index)
-    end)
-    if not ok or type(debuff) ~= "table" then
+    local debuff = api.Unit:UnitDeBuff(unit, index)
+    if type(debuff) ~= "table" then
         return nil
     end
     return debuff
@@ -178,10 +171,7 @@ local function getTooltip(buffId)
     if TOOLTIP_CACHE[id] ~= nil then
         return TOOLTIP_CACHE[id]
     end
-    local tooltip = nil
-    pcall(function()
-        tooltip = api.Ability:GetBuffTooltip(id, 1)
-    end)
+    local tooltip = api.Ability:GetBuffTooltip(id, 1)
     TOOLTIP_CACHE[id] = type(tooltip) == "table" and tooltip or false
     if TOOLTIP_CACHE[id] == false then
         return nil

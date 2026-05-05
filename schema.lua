@@ -160,6 +160,14 @@ Schema.STYLE_CHOICES = {
         }
     },
     {
+        key = "hp_color_mode",
+        label = "HP fill",
+        options = {
+            { value = "solid", label = "Solid" },
+            { value = "red_blue_gradient", label = "Red/Blue" }
+        }
+    },
+    {
         key = "name_layout",
         label = "Name layout",
         options = {
