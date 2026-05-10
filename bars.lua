@@ -35,9 +35,6 @@ local Bars = {
     discovery_position_active_cursor = 1,
     discovery_position_cold_cursor = 1,
     hovered_unit = nil,
-    target_unitframe = nil,
-    watchtarget_unitframe = nil,
-    targetoftarget_unitframe = nil,
     layer_mode = nil,
     owner_source_last_build_ms = 0,
     last_visible_bulk_position_ms = 0
@@ -47,7 +44,6 @@ local applyLayerToFrame
 local setBorderVisible
 local changeTarget
 local hasAnyEntries
-local TARGET_DEBUG_LOGGING = false
 
 local VALID_UI_LAYERS = {
     background = true,
@@ -126,6 +122,18 @@ local function safeUiNowMs()
     return tonumber(value) or 0
 end
 
+local function setWidgetPickable(widget, enabled)
+    if widget == nil then
+        return
+    end
+    Helpers.SafeClickable(widget, enabled)
+    if widget.EnablePick ~= nil then
+        pcall(function()
+            widget:EnablePick(enabled and true or false)
+        end)
+    end
+end
+
 local function safeCreateCcIcon(id, parent)
     if type(CreateItemIconButton) ~= "function" or parent == nil then
         return nil
@@ -136,9 +144,10 @@ local function safeCreateCcIcon(id, parent)
     if not ok or icon == nil then
         return nil
     end
-    Helpers.SafeClickable(icon, false)
+    setWidgetPickable(icon, false)
     Helpers.SafeShow(icon, false)
     if icon.back ~= nil then
+        setWidgetPickable(icon.back, false)
         pcall(function()
             if F_SLOT ~= nil and F_SLOT.ApplySlotSkin ~= nil then
                 local style = DEBUFF or (SLOT_STYLE ~= nil and (SLOT_STYLE.BUFF or SLOT_STYLE.DEFAULT or SLOT_STYLE.ITEM)) or nil
@@ -211,7 +220,7 @@ local function makeCcTimerLabel(id, parent)
         return nil
     end
     local label = api.Interface:CreateWidget("label", id, parent)
-    Helpers.SafeClickable(label, false)
+    setWidgetPickable(label, false)
     Helpers.SafeShow(label, false)
     pcall(function()
         if label.style ~= nil then
@@ -258,7 +267,7 @@ end
 
 local function shouldTrackCcUnit(unit, cfg)
     local key = tostring(unit or "")
-    if key == "player" or key == "target" or key == "watchtarget" then
+    if key == "player" or key == "target" or key == "watchtarget" or key == "targettarget" then
         return true
     end
     if type(cfg) ~= "table" or tostring(cfg.cc_tracking_scope or "focus") ~= "raid" then
@@ -289,9 +298,9 @@ local function normalizeTargetToken(unit)
     return token
 end
 
-local function shouldPreferUnitIdClickTarget(unit)
-    local key = normalizeTargetToken(unit)
-    return key == "target" or key == "watchtarget" or key == "targettarget"
+local function shouldPassThroughUnit(unit)
+    unit = normalizeTargetToken(unit)
+    return unit == "watchtarget" or unit == "targettarget"
 end
 
 local function isShiftDown()
@@ -327,6 +336,10 @@ local function canClickTargetUnit(unit, settings)
     if shouldPassThroughClick(settings) then
         return false
     end
+    unit = normalizeTargetToken(unit)
+    if unit == "target" or shouldPassThroughUnit(unit) then
+        return false
+    end
     return unit ~= nil
 end
 
@@ -339,17 +352,37 @@ local function setEventWindowInteraction(frame, enabled)
     if frame.eventWindow == nil then
         return
     end
-    if frame.eventWindow.EnablePick ~= nil then
-        pcall(function()
-            frame.eventWindow:EnablePick(interactive)
-        end)
-    end
-    Helpers.SafeClickable(frame.eventWindow, interactive)
+    setWidgetPickable(frame.eventWindow, interactive)
     Helpers.SafeShow(frame.eventWindow, interactive)
 end
 
+local function applyPassThrough(frame, enabled)
+    if frame == nil or enabled ~= true then
+        return
+    end
+    setWidgetPickable(frame, false)
+    setWidgetPickable(frame.hpBar, false)
+    setWidgetPickable(frame.hpBar ~= nil and frame.hpBar.statusBar or nil, false)
+    setWidgetPickable(frame.mpBar, false)
+    setWidgetPickable(frame.mpBar ~= nil and frame.mpBar.statusBar or nil, false)
+    setWidgetPickable(frame.nameLabel, false)
+    setWidgetPickable(frame.guildLabel, false)
+    setWidgetPickable(frame.roleLabel, false)
+    setWidgetPickable(frame.hpValueLabel, false)
+    setWidgetPickable(frame.mpValueLabel, false)
+    setWidgetPickable(frame.distanceLabel, false)
+    setWidgetPickable(frame.ccPrimary, false)
+    setWidgetPickable(frame.ccPrimary ~= nil and frame.ccPrimary.back or nil, false)
+    for _, entry in ipairs(frame.ccExtras or {}) do
+        setWidgetPickable(entry.icon, false)
+        setWidgetPickable(entry.icon ~= nil and entry.icon.back or nil, false)
+        setWidgetPickable(entry.timer, false)
+    end
+    setEventWindowInteraction(frame, false)
+end
+
 local function isHotUnit(unit)
-    return unit == "target" or unit == "player" or unit == "watchtarget"
+    return unit == "target" or unit == "player" or unit == "watchtarget" or unit == "targettarget"
 end
 
 local function getCanonicalRenderPriority(unit)
@@ -410,6 +443,9 @@ local function getUnitDisplayPriority(unit)
     end
     if key == "watchtarget" then
         return 300
+    end
+    if key == "targettarget" then
+        return 250
     end
     if key == "target" then
         return 200
@@ -600,152 +636,15 @@ local function applyFrameCompositeAlpha(frame)
     Helpers.SafeSetAlpha(frame, fadeAlpha * baseAlpha * hoverAlpha)
 end
 
-local function getStockTargetFrame()
-    local cached = Bars.target_unitframe
-    if cached ~= nil and cached.eventWindow ~= nil and cached.eventWindow.OnClick ~= nil then
-        return cached
+local function targetViaUnitApi(value)
+    if value == nil or value == "" then
+        return false
     end
-    if ADDON == nil or ADDON.GetContent == nil or UIC == nil or UIC.TARGET_UNITFRAME == nil then
-        Bars.target_unitframe = nil
-        return nil
+    if api == nil or api.Unit == nil or type(api.Unit.TargetUnit) ~= "function" then
+        return false
     end
-    local value = nil
-    pcall(function()
-        value = ADDON:GetContent(UIC.TARGET_UNITFRAME)
-    end)
-    if value ~= nil and value.eventWindow ~= nil and value.eventWindow.OnClick ~= nil then
-        Bars.target_unitframe = value
-        return value
-    end
-    Bars.target_unitframe = nil
-    return nil
-end
-
-local function getStockWatchtargetFrame()
-    local cached = Bars.watchtarget_unitframe
-    if cached ~= nil and cached.eventWindow ~= nil and cached.eventWindow.OnClick ~= nil then
-        return cached
-    end
-    if ADDON == nil or ADDON.GetContent == nil or UIC == nil or UIC.WATCH_TARGET_FRAME == nil then
-        Bars.watchtarget_unitframe = nil
-        return nil
-    end
-    local value = nil
-    pcall(function()
-        value = ADDON:GetContent(UIC.WATCH_TARGET_FRAME)
-    end)
-    if value ~= nil and value.eventWindow ~= nil and value.eventWindow.OnClick ~= nil then
-        Bars.watchtarget_unitframe = value
-        return value
-    end
-    Bars.watchtarget_unitframe = nil
-    return nil
-end
-
-local function getStockTargetOfTargetFrame()
-    local cached = Bars.targetoftarget_unitframe
-    if cached ~= nil and cached.eventWindow ~= nil and cached.eventWindow.OnClick ~= nil then
-        return cached
-    end
-    if ADDON == nil or ADDON.GetContent == nil or UIC == nil or UIC.TARGET_OF_TARGET_FRAME == nil then
-        Bars.targetoftarget_unitframe = nil
-        return nil
-    end
-    local value = nil
-    pcall(function()
-        value = ADDON:GetContent(UIC.TARGET_OF_TARGET_FRAME)
-    end)
-    if value ~= nil and value.eventWindow ~= nil and value.eventWindow.OnClick ~= nil then
-        Bars.targetoftarget_unitframe = value
-        return value
-    end
-    Bars.targetoftarget_unitframe = nil
-    return nil
-end
-
-local function getStockFrameForUnit(unit)
-    local key = tostring(unit or "")
-    if key == "watchtarget" then
-        return getStockWatchtargetFrame(), "watchtarget"
-    end
-    if key == "targetoftarget" or key == "target_of_target" or key == "targettarget" then
-        return getStockTargetOfTargetFrame(), "targettarget"
-    end
-    return getStockTargetFrame(), "target"
-end
-
-local function getStockFrameMethodCandidates(unit)
-    local key = tostring(unit or "")
-    if key == "watchtarget" then
-        return {
-            { method = "SetWatchTarget", args = { "watchtarget" }, label = "stock frame SetWatchTarget(watchtarget)" },
-            { method = "SetTarget", args = { "watchtarget" }, label = "stock frame SetTarget(watchtarget)" },
-            { method = "TargetChanged", args = { "watchtarget" }, label = "stock frame TargetChanged(watchtarget)" }
-        }
-    end
-    if key == "targetoftarget" or key == "target_of_target" or key == "targettarget" then
-        return {
-            { method = "SetTarget", args = { "targettarget" }, label = "stock frame SetTarget(targettarget)" },
-            { method = "TargetChanged", args = { "targettarget" }, label = "stock frame TargetChanged(targettarget)" }
-        }
-    end
-    return {
-        { method = "SetTarget", args = { "target" }, label = "stock frame SetTarget(target)" },
-        { method = "TargetChanged", args = { "target" }, label = "stock frame TargetChanged(target)" }
-    }
-end
-
-local function getTargetUnitCandidates(unit)
-    local key = normalizeTargetToken(unit)
-    if key == "" then
-        return {}
-    end
-    if key == nil then
-        return {}
-    end
-    if key == "watchtarget" then
-        return { "watchtarget", "targettarget", "target_of_target", "targetoftarget" }
-    end
-    if key == "targetoftarget" or key == "target_of_target" or key == "targettarget" then
-        return { "targettarget", "target_of_target", "targetoftarget", "watchtarget" }
-    end
-    return { key }
-end
-
-local function logTargetDebug(message)
-    if not TARGET_DEBUG_LOGGING then
-        return
-    end
-    if api == nil or api.Log == nil or api.Log.Info == nil then
-        return
-    end
-    api.Log:Info("[Gharka Bars] " .. tostring(message or ""))
-end
-
-local function didTargetResolve(beforeTargetId, desiredUnitId)
-    local current = getCurrentTargetUnitId()
-    if desiredUnitId ~= nil then
-        return current == desiredUnitId, current
-    end
-    if beforeTargetId == nil then
-        return current ~= nil, current
-    end
-    return current ~= beforeTargetId, current
-end
-
-local function tryTargetCall(label, callback, beforeTargetId, desiredUnitId)
-    local ok, err = pcall(callback)
-    local changed, current = didTargetResolve(beforeTargetId, desiredUnitId)
-    if changed then
-        logTargetDebug(string.format("Target success via %s -> %s", tostring(label), tostring(current)))
-        return true
-    end
-    if not ok then
-        logTargetDebug(string.format("Target attempt failed via %s: %s", tostring(label), tostring(err)))
-    else
-        logTargetDebug(string.format("Target attempt no-op via %s (current=%s expected=%s)", tostring(label), tostring(current), tostring(desiredUnitId)))
-    end
-    return false
+    api.Unit:TargetUnit(value)
+    return true
 end
 
 local function getGuildNameFromInfo(info)
@@ -1148,6 +1047,8 @@ local function shouldShowUnit(unit, settings)
         return settings.show_player and true or false
     elseif unit == "watchtarget" then
         return settings.show_watchtarget and true or false
+    elseif unit == "targettarget" then
+        return settings.show_targettarget and true or false
     elseif unit == "playerpet1" then
         return settings.show_mount and true or false
     elseif string.match(unit or "", "^team%d+$") then
@@ -1163,6 +1064,7 @@ local function ensureUnitKeys()
     table.insert(Bars.hot_unit_keys, "target")
     table.insert(Bars.hot_unit_keys, "player")
     table.insert(Bars.hot_unit_keys, "watchtarget")
+    table.insert(Bars.hot_unit_keys, "targettarget")
     for _, unit in ipairs(Bars.hot_unit_keys) do
         table.insert(Bars.unit_keys, unit)
     end
@@ -1269,7 +1171,7 @@ local function ensureRootWindow()
             root:SetUILayer(Bars.layer_mode)
         end
     end)
-    Helpers.SafeClickable(root, false)
+    setWidgetPickable(root, false)
     Helpers.SafeShow(root, true)
     Bars.root_window = root
     return root
@@ -1284,7 +1186,7 @@ local function createFrameContainer(frameId)
         end)
         if frame ~= nil then
             frame.__ghb_top_level = false
-            Helpers.SafeClickable(frame, false)
+            setWidgetPickable(frame, false)
             Helpers.SafeShow(frame, false)
             return frame
         end
@@ -1297,7 +1199,7 @@ local function createFrameContainer(frameId)
                 frame:SetUILayer(Bars.layer_mode)
             end
         end)
-        Helpers.SafeClickable(frame, false)
+        setWidgetPickable(frame, false)
         Helpers.SafeShow(frame, false)
     end
     return frame
@@ -1344,20 +1246,16 @@ local function ensureFrame(unit)
             mpBar = W_BAR.CreateStatusBarOfRaidFrame(frameId .. ".mpBar", frame)
             if hpBar ~= nil then
                 hpBar:Show(true)
-                hpBar:Clickable(false)
-                if hpBar.statusBar ~= nil and hpBar.statusBar.Clickable ~= nil then
-                    hpBar.statusBar:Clickable(false)
-                end
+                setWidgetPickable(hpBar, false)
+                setWidgetPickable(hpBar.statusBar, false)
                 if STATUSBAR_STYLE ~= nil and STATUSBAR_STYLE.HP_RAID ~= nil then
                     hpBar:ApplyBarTexture(STATUSBAR_STYLE.HP_RAID)
                 end
             end
             if mpBar ~= nil then
                 mpBar:Show(true)
-                mpBar:Clickable(false)
-                if mpBar.statusBar ~= nil and mpBar.statusBar.Clickable ~= nil then
-                    mpBar.statusBar:Clickable(false)
-                end
+                setWidgetPickable(mpBar, false)
+                setWidgetPickable(mpBar.statusBar, false)
                 if STATUSBAR_STYLE ~= nil and STATUSBAR_STYLE.MP_RAID ~= nil then
                     mpBar:ApplyBarTexture(STATUSBAR_STYLE.MP_RAID)
                 end
@@ -1368,7 +1266,7 @@ local function ensureFrame(unit)
     frame.mpBar = mpBar
     local function makeLabel(suffix)
         local label = api.Interface:CreateWidget("label", frameId .. "." .. suffix, frame)
-        Helpers.SafeClickable(label, false)
+        setWidgetPickable(label, false)
         return label
     end
 
@@ -1394,11 +1292,8 @@ local function ensureFrame(unit)
         eventWindow:AddAnchor("TOPLEFT", frame, 0, 0)
         eventWindow:AddAnchor("BOTTOMRIGHT", frame, 0, 0)
         eventWindow:Show(false)
-        if eventWindow.EnablePick ~= nil then
-            eventWindow:EnablePick(true)
-        end
     end)
-    Helpers.SafeClickable(eventWindow, false)
+    setWidgetPickable(eventWindow, false)
     local function onHoverEnter()
         Bars.hovered_unit = frame.__ghb_unit or unit
     end
@@ -1422,11 +1317,7 @@ local function ensureFrame(unit)
                 return
             end
             local clickUnit = frame.__ghb_unit or unit
-            if shouldPreferUnitIdClickTarget(clickUnit) and frame.__ghb_unit_id ~= nil then
-                changeTarget(nil, frame.__ghb_unit_id)
-                return
-            end
-            changeTarget(clickUnit, frame.__ghb_unit_id)
+            changeTarget(clickUnit)
         end)
     end
     frame.eventWindow = eventWindow
@@ -1523,123 +1414,15 @@ local function syncLayerMode(settings)
     end
     Bars.layer_mode = mode
     ensureUnitKeys()
-    Bars.target_unitframe = getStockTargetFrame()
-    Bars.watchtarget_unitframe = getStockWatchtargetFrame()
-    Bars.targetoftarget_unitframe = getStockTargetOfTargetFrame()
 end
 
-changeTarget = function(unit, unitId)
-    if unit == nil and unitId == nil then
+changeTarget = function(unit)
+    if unit == nil then
         return
     end
 
-    local beforeTargetId = getCurrentTargetUnitId()
-    local desiredUnitId = normalizeUnitId(unitId)
     local normalizedUnit = normalizeTargetToken(unit)
-    local unitCandidates = getTargetUnitCandidates(normalizedUnit)
-    logTargetDebug(string.format("Click target request unit=%s unitId=%s current=%s", tostring(normalizedUnit), tostring(desiredUnitId), tostring(beforeTargetId)))
-
-    if normalizedUnit == nil and desiredUnitId == nil then
-        return
-    end
-
-    if api ~= nil and api.Unit ~= nil and type(api.Unit.TargetUnit) == "function" then
-        if normalizedUnit == "player" then
-            if tryTargetCall("api.Unit:TargetUnit(player)", function()
-                api.Unit:TargetUnit("player")
-            end, beforeTargetId, desiredUnitId) then
-                return
-            end
-            return
-        end
-
-        for _, candidate in ipairs(unitCandidates) do
-            if tryTargetCall("api.Unit:TargetUnit(" .. tostring(candidate) .. ")", function()
-                api.Unit:TargetUnit(candidate)
-            end, beforeTargetId, desiredUnitId) then
-                return
-            end
-        end
-        if desiredUnitId ~= nil then
-            if tryTargetCall("api.Unit:TargetUnit(unitId)", function()
-                api.Unit:TargetUnit(desiredUnitId)
-            end, beforeTargetId, desiredUnitId) then
-                return
-            end
-        end
-    end
-
-    local tu, stockUnit = getStockFrameForUnit(normalizedUnit)
-    if tu == nil or tu.eventWindow == nil or tu.eventWindow.OnClick == nil then
-        logTargetDebug("Matching stock frame unavailable")
-        return
-    end
-
-    for _, candidate in ipairs(getStockFrameMethodCandidates(unit)) do
-        local method = candidate.method
-        if type(tu[method]) == "function" then
-            if tryTargetCall(tostring(candidate.label), function()
-                tu[method](tu, unpack(candidate.args))
-                if tu.UpdateAll ~= nil then
-                    tu:UpdateAll()
-                end
-            end, beforeTargetId, desiredUnitId) then
-                return
-            end
-        end
-    end
-
-    if tryTargetCall("stock target frame(native)", function()
-        tu.eventWindow:OnClick("LeftButton")
-        if tu.ChangedTarget ~= nil then
-            tu:ChangedTarget()
-        end
-        if tu.UpdateAll ~= nil then
-            tu:UpdateAll()
-        end
-    end, beforeTargetId, desiredUnitId) then
-        return
-    end
-
-    if tryTargetCall("stock target frame(unit)", function()
-        if tu.target ~= nil then
-            tu.target = stockUnit or unit
-        end
-        tu.eventWindow:OnClick("LeftButton")
-        if tu.target ~= nil then
-            tu.target = stockUnit or "target"
-        end
-        if tu.ChangedTarget ~= nil then
-            tu:ChangedTarget()
-        end
-        if tu.UpdateAll ~= nil then
-            tu:UpdateAll()
-        end
-    end, beforeTargetId, desiredUnitId) then
-        return
-    end
-
-    if desiredUnitId ~= nil then
-        if tryTargetCall("stock target frame(unitId)", function()
-            if tu.target ~= nil then
-                tu.target = desiredUnitId
-            end
-            tu.eventWindow:OnClick("LeftButton")
-            if tu.target ~= nil then
-                tu.target = stockUnit or "target"
-            end
-            if tu.ChangedTarget ~= nil then
-                tu:ChangedTarget()
-            end
-            if tu.UpdateAll ~= nil then
-                tu:UpdateAll()
-            end
-        end, beforeTargetId, desiredUnitId) then
-            return
-        end
-    end
-
-    logTargetDebug("All targeting paths failed")
+    targetViaUnitApi(normalizedUnit)
 end
 
 local function updateCachedText(frame, key, widget, text)
@@ -2370,6 +2153,7 @@ local function updateOne(unit, context)
     frame.cache.hp_pct = (hpMax ~= nil and hpMax > 0) and math.max(0, math.min(1, hp / hpMax)) or 1
     frame.__ghb_unit = unit
     frame.__ghb_unit_id = unitId
+    applyPassThrough(frame, shouldPassThroughUnit(unit))
     setEventWindowInteraction(frame, canClickTargetUnit(unit, settings))
     Helpers.SafeShow(frame.nameLabel, cfg.show_name ~= false)
     Helpers.SafeShow(frame.guildLabel, cfg.show_guild and guildText ~= "")
@@ -2567,6 +2351,7 @@ local function updatePositionsForUnits(unitKeys, settings, cfg, positionSources,
                     fadeOutFrame(frame, nowMs)
                 end
             elseif frame.cache.data_active then
+                applyPassThrough(frame, shouldPassThroughUnit(unit))
                 setEventWindowInteraction(frame, canClickTargetUnit(unit, settings))
                 local positionUnit = type(positionSources) == "table" and positionSources[unit] or unit
                 local screenX, screenY, screenZ = resolveStableScreenPosition(frame, positionUnit, settings, nowMs, unit)
@@ -2853,9 +2638,6 @@ function Bars.Unload()
     Bars.hovered_unit = nil
     Bars.owner_source_last_build_ms = 0
     Bars.last_visible_bulk_position_ms = 0
-    Bars.target_unitframe = nil
-    Bars.watchtarget_unitframe = nil
-    Bars.targetoftarget_unitframe = nil
 end
 
 return Bars

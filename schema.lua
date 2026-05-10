@@ -7,6 +7,7 @@ Schema.GLOBAL_TOGGLES = {
     { key = "show_player", label = "Self" },
     { key = "show_target", label = "Target" },
     { key = "show_watchtarget", label = "Watch target" },
+    { key = "show_targettarget", label = "Target of target" },
     { key = "show_raid_party", label = "Raid / party" },
     { key = "show_mount", label = "Mount / pet" }
 }

@@ -7,7 +7,7 @@ Because stock nameplates are fine right up until the raid starts moving.
 `Gharka Bars` keeps the important information where you can actually use it:
 
 - replaces stock overhead clutter with cleaner HP and MP bars
-- supports `player`, `target`, `watchtarget`, `mount/pet`, and raid members
+- supports `player`, `target`, `watchtarget`, `targettarget`, `mount/pet`, and raid members
 - shows role icons, distance text, target highlighting, and CC timers
 - includes a movable launcher icon and in-game settings window
 - supports layout presets, named profiles, and local backups
@@ -37,7 +37,7 @@ The bars are built to stay useful when fights get crowded.
 
 You can use them for:
 
-- fast `player`, `target`, and `watchtarget` tracking
+- fast `player`, `target`, `watchtarget`, and `targettarget` tracking
 - `mount/pet` visibility when enabled
 - raid member HP and MP visibility
 - CC icon and timer awareness
@@ -62,7 +62,7 @@ The HP bar is the click surface for targeting.
 
 You can:
 
-- click bars to target units
+- click player, party, raid, and mount bars to target those units
 - hold `Shift` or `Ctrl` to make the bars click-through
 - move the launcher and settings window with `Shift + drag`
 
@@ -73,6 +73,6 @@ You can:
 - Backup files are stored in `.data/backups`.
 - The launcher icon has its own saved position file so profile swaps do not reset it.
 - Holding `Shift` or `Ctrl` makes bars click-through for easier camera control in crowded fights.
-- `watchtarget` and other client-dependent surfaces still rely on what AAClassic exposes at runtime.
+- AAClassic does not expose addon targeting for `target`, `watchtarget`, or `targettarget`; `watchtarget` and `targettarget` bars are click-through so the stock/game target behind them can receive the click.
 
-1.5.54
+1.5.66
