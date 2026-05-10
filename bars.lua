@@ -1537,73 +1537,23 @@ changeTarget = function(unit, unitId)
     local desiredUnitId = normalizeUnitId(unitId)
     local normalizedUnit = normalizeTargetToken(unit)
     local unitCandidates = getTargetUnitCandidates(normalizedUnit)
-    local targetInfo = getUnitInfo(normalizedUnit, desiredUnitId)
-    local targetName = getUnitName(normalizedUnit, desiredUnitId, targetInfo)
     logTargetDebug(string.format("Click target request unit=%s unitId=%s current=%s", tostring(normalizedUnit), tostring(desiredUnitId), tostring(beforeTargetId)))
 
-    if normalizedUnit == nil and desiredUnitId == nil and (targetName == nil or targetName == "") then
+    if normalizedUnit == nil and desiredUnitId == nil then
         return
     end
 
-    if normalizedUnit == "player" then
-        if type(TargetUnit) == "function" then
-            if tryTargetCall("TargetUnit(player)", function()
-                TargetUnit("player")
-            end, beforeTargetId, desiredUnitId) then
-                return
-            end
-        end
-        if api ~= nil and api.Unit ~= nil and type(api.Unit.TargetUnit) == "function" then
-            if tryTargetCall("api.Unit.TargetUnit(player)", function()
-                api.Unit.TargetUnit("player")
-            end, beforeTargetId, desiredUnitId) then
-                return
-            end
+    if api ~= nil and api.Unit ~= nil and type(api.Unit.TargetUnit) == "function" then
+        if normalizedUnit == "player" then
             if tryTargetCall("api.Unit:TargetUnit(player)", function()
                 api.Unit:TargetUnit("player")
             end, beforeTargetId, desiredUnitId) then
                 return
             end
+            return
         end
-        if type(X2Unit) == "table" and type(X2Unit.TargetUnit) == "function" then
-            if tryTargetCall("X2Unit.TargetUnit(player)", function()
-                X2Unit.TargetUnit("player")
-            end, beforeTargetId, desiredUnitId) then
-                return
-            end
-            if tryTargetCall("X2Unit:TargetUnit(player)", function()
-                X2Unit:TargetUnit("player")
-            end, beforeTargetId, desiredUnitId) then
-                return
-            end
-        end
-        return
-    end
 
-    if type(TargetUnit) == "function" then
         for _, candidate in ipairs(unitCandidates) do
-            if tryTargetCall("TargetUnit(" .. tostring(candidate) .. ")", function()
-                TargetUnit(candidate)
-            end, beforeTargetId, desiredUnitId) then
-                return
-            end
-        end
-        if desiredUnitId ~= nil then
-            if tryTargetCall("TargetUnit(unitId)", function()
-                TargetUnit(desiredUnitId)
-            end, beforeTargetId, desiredUnitId) then
-                return
-            end
-        end
-    end
-
-    if api ~= nil and api.Unit ~= nil and type(api.Unit.TargetUnit) == "function" then
-        for _, candidate in ipairs(unitCandidates) do
-            if tryTargetCall("api.Unit.TargetUnit(" .. tostring(candidate) .. ")", function()
-                api.Unit.TargetUnit(candidate)
-            end, beforeTargetId, desiredUnitId) then
-                return
-            end
             if tryTargetCall("api.Unit:TargetUnit(" .. tostring(candidate) .. ")", function()
                 api.Unit:TargetUnit(candidate)
             end, beforeTargetId, desiredUnitId) then
@@ -1611,74 +1561,8 @@ changeTarget = function(unit, unitId)
             end
         end
         if desiredUnitId ~= nil then
-            if tryTargetCall("api.Unit.TargetUnit(unitId)", function()
-                api.Unit.TargetUnit(desiredUnitId)
-            end, beforeTargetId, desiredUnitId) then
-                return
-            end
             if tryTargetCall("api.Unit:TargetUnit(unitId)", function()
                 api.Unit:TargetUnit(desiredUnitId)
-            end, beforeTargetId, desiredUnitId) then
-                return
-            end
-        end
-    end
-
-    if type(X2Unit) == "table" and type(X2Unit.TargetUnit) == "function" then
-        for _, candidate in ipairs(unitCandidates) do
-            if tryTargetCall("X2Unit.TargetUnit(" .. tostring(candidate) .. ")", function()
-                X2Unit.TargetUnit(candidate)
-            end, beforeTargetId, desiredUnitId) then
-                return
-            end
-            if tryTargetCall("X2Unit:TargetUnit(" .. tostring(candidate) .. ")", function()
-                X2Unit:TargetUnit(candidate)
-            end, beforeTargetId, desiredUnitId) then
-                return
-            end
-        end
-        if desiredUnitId ~= nil then
-            if tryTargetCall("X2Unit.TargetUnit(unitId)", function()
-                X2Unit.TargetUnit(desiredUnitId)
-            end, beforeTargetId, desiredUnitId) then
-                return
-            end
-            if tryTargetCall("X2Unit:TargetUnit(unitId)", function()
-                X2Unit:TargetUnit(desiredUnitId)
-            end, beforeTargetId, desiredUnitId) then
-                return
-            end
-        end
-    end
-
-    if targetName ~= nil and targetName ~= "" then
-        if type(TargetUnit) == "function" then
-            if tryTargetCall("TargetUnit(name)", function()
-                TargetUnit(targetName)
-            end, beforeTargetId, desiredUnitId) then
-                return
-            end
-        end
-        if api ~= nil and api.Unit ~= nil and type(api.Unit.TargetUnit) == "function" then
-            if tryTargetCall("api.Unit.TargetUnit(name)", function()
-                api.Unit.TargetUnit(targetName)
-            end, beforeTargetId, desiredUnitId) then
-                return
-            end
-            if tryTargetCall("api.Unit:TargetUnit(name)", function()
-                api.Unit:TargetUnit(targetName)
-            end, beforeTargetId, desiredUnitId) then
-                return
-            end
-        end
-        if type(X2Unit) == "table" and type(X2Unit.TargetUnit) == "function" then
-            if tryTargetCall("X2Unit.TargetUnit(name)", function()
-                X2Unit.TargetUnit(targetName)
-            end, beforeTargetId, desiredUnitId) then
-                return
-            end
-            if tryTargetCall("X2Unit:TargetUnit(name)", function()
-                X2Unit:TargetUnit(targetName)
             end, beforeTargetId, desiredUnitId) then
                 return
             end

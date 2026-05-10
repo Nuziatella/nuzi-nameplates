@@ -75,4 +75,4 @@ You can:
 - Holding `Shift` or `Ctrl` makes bars click-through for easier camera control in crowded fights.
 - `watchtarget` and other client-dependent surfaces still rely on what AAClassic exposes at runtime.
 
-1.5.53
+1.5.54
