@@ -63,7 +63,7 @@ The HP bar is the click surface for targeting.
 You can:
 
 - click player, party, raid, and mount bars to target those units
-- hold `Shift` or `Ctrl` to make the bars click-through
+- hold `Shift` or `Ctrl` to click through clickable bars
 - move the launcher and settings window with `Shift + drag`
 
 ## Notes
@@ -72,7 +72,6 @@ You can:
 - Launcher position is stored separately so it does not get stomped by profile changes.
 - Backup files are stored in `.data/backups`.
 - The launcher icon has its own saved position file so profile swaps do not reset it.
-- Holding `Shift` or `Ctrl` makes bars click-through for easier camera control in crowded fights.
 - AAClassic does not expose addon targeting for `target`, `watchtarget`, or `targettarget`; `watchtarget` and `targettarget` bars are click-through so the stock/game target behind them can receive the click.
 
-1.5.66
+1.5.73

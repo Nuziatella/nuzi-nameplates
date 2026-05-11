@@ -58,6 +58,7 @@ local VALID_UI_LAYERS = {
 
 local TARGET_GLOW_COLOR = { 255, 245, 0, 255 }
 local TARGET_TINT_COLOR = { 255, 245, 0, 170 }
+local HOVER_TINT_COLOR = { 255, 255, 245, 51 }
 local CC_DISPEL_BORDER_COLOR = { 180, 72, 255, 255 }
 local CC_DISPEL_SLOT_COLOR = { 0.7059, 0.2824, 1, 1 }
 local BLOODLUST_BUFF_ID = 1482
@@ -132,6 +133,27 @@ local function setWidgetPickable(widget, enabled)
             widget:EnablePick(enabled and true or false)
         end)
     end
+end
+
+local function raiseWidget(widget)
+    if widget == nil or widget.Raise == nil then
+        return
+    end
+    pcall(function()
+        widget:Raise()
+    end)
+end
+
+local function registerEventWindowClicks(widget)
+    if widget == nil or widget.RegisterForClicks == nil then
+        return
+    end
+    pcall(function()
+        widget:RegisterForClicks("LeftButtonUp")
+    end)
+    pcall(function()
+        widget:RegisterForClicks("LeftButton")
+    end)
 end
 
 local function safeCreateCcIcon(id, parent)
@@ -315,15 +337,21 @@ local function isCtrlDown()
         if api.Input.IsControlKeyDown ~= nil then
             return api.Input:IsControlKeyDown() and true or false
         end
+        if api.Input.IsCtrlKeyDown ~= nil then
+            return api.Input:IsCtrlKeyDown() and true or false
+        end
     end
     return false
 end
 
 local function shouldPassThroughClick(settings)
-    if isShiftDown() then
+    if type(settings) ~= "table" then
+        return false
+    end
+    if settings.click_through_shift ~= false and isShiftDown() then
         return true
     end
-    if isCtrlDown() then
+    if settings.click_through_ctrl ~= false and isCtrlDown() then
         return true
     end
     return false
@@ -343,6 +371,41 @@ local function canClickTargetUnit(unit, settings)
     return unit ~= nil
 end
 
+local function blendHoverTintColor(rgba)
+    if type(rgba) ~= "table" then
+        return rgba
+    end
+    local tint = Helpers.Color01(HOVER_TINT_COLOR, { 255, 255, 245, 51 })
+    local strength = tint[4] or 0.2
+    return {
+        (rgba[1] or 1) + ((tint[1] or 1) - (rgba[1] or 1)) * strength,
+        (rgba[2] or 1) + ((tint[2] or 1) - (rgba[2] or 1)) * strength,
+        (rgba[3] or 1) + ((tint[3] or 1) - (rgba[3] or 1)) * strength,
+        rgba[4] or 1
+    }
+end
+
+local function setHoverHighlight(frame, enabled)
+    if frame == nil then
+        return
+    end
+    local visible = enabled == true and frame.__ghb_click_target == true
+    if frame.__ghb_hover_visible == visible then
+        return
+    end
+    frame.__ghb_hover_visible = visible
+    if frame.cache ~= nil then
+        frame.cache.hp_bar_color_key = nil
+        if frame.hpBar ~= nil and frame.hpBar.statusBar ~= nil and frame.cache.hp_bar_rgba ~= nil then
+            local color = frame.cache.hp_bar_rgba
+            if visible then
+                color = blendHoverTintColor(color)
+            end
+            Helpers.ApplyStatusBarColor(frame.hpBar.statusBar, color)
+        end
+    end
+end
+
 local function setEventWindowInteraction(frame, enabled)
     if frame == nil then
         return
@@ -352,15 +415,23 @@ local function setEventWindowInteraction(frame, enabled)
     if frame.eventWindow == nil then
         return
     end
-    setWidgetPickable(frame.eventWindow, interactive)
+    if not interactive then
+        setHoverHighlight(frame, false)
+    end
     Helpers.SafeShow(frame.eventWindow, interactive)
+    setWidgetPickable(frame.eventWindow, interactive)
+    if interactive then
+        registerEventWindowClicks(frame.eventWindow)
+        raiseWidget(frame.eventWindow)
+    end
 end
 
 local function applyPassThrough(frame, enabled)
     if frame == nil or enabled ~= true then
         return
     end
-    setWidgetPickable(frame, false)
+    setHoverHighlight(frame, false)
+    Helpers.SafeClickable(frame, false)
     setWidgetPickable(frame.hpBar, false)
     setWidgetPickable(frame.hpBar ~= nil and frame.hpBar.statusBar or nil, false)
     setWidgetPickable(frame.mpBar, false)
@@ -1171,7 +1242,7 @@ local function ensureRootWindow()
             root:SetUILayer(Bars.layer_mode)
         end
     end)
-    setWidgetPickable(root, false)
+    Helpers.SafeClickable(root, false)
     Helpers.SafeShow(root, true)
     Bars.root_window = root
     return root
@@ -1186,7 +1257,7 @@ local function createFrameContainer(frameId)
         end)
         if frame ~= nil then
             frame.__ghb_top_level = false
-            setWidgetPickable(frame, false)
+            Helpers.SafeClickable(frame, false)
             Helpers.SafeShow(frame, false)
             return frame
         end
@@ -1199,7 +1270,7 @@ local function createFrameContainer(frameId)
                 frame:SetUILayer(Bars.layer_mode)
             end
         end)
-        setWidgetPickable(frame, false)
+        Helpers.SafeClickable(frame, false)
         Helpers.SafeShow(frame, false)
     end
     return frame
@@ -1287,24 +1358,29 @@ local function ensureFrame(unit)
             timer = timer
         })
     end
-    local eventWindow = api.Interface:CreateWidget("emptywidget", frameId .. ".event", frame)
+    local eventWindow = api.Interface:CreateWidget("button", frameId .. ".event", frame)
     pcall(function()
         eventWindow:AddAnchor("TOPLEFT", frame, 0, 0)
         eventWindow:AddAnchor("BOTTOMRIGHT", frame, 0, 0)
         eventWindow:Show(false)
+        if eventWindow.SetAlpha ~= nil then
+            eventWindow:SetAlpha(0)
+        end
+        if eventWindow.EnableDrag ~= nil then
+            eventWindow:EnableDrag(false)
+        end
     end)
     setWidgetPickable(eventWindow, false)
+    registerEventWindowClicks(eventWindow)
     local function onHoverEnter()
         Bars.hovered_unit = frame.__ghb_unit or unit
+        setHoverHighlight(frame, true)
     end
     local function onHoverLeave()
         if Bars.hovered_unit == (frame.__ghb_unit or unit) then
             Bars.hovered_unit = nil
         end
-    end
-    if frame.SetHandler ~= nil then
-        frame:SetHandler("OnEnter", onHoverEnter)
-        frame:SetHandler("OnLeave", onHoverLeave)
+        setHoverHighlight(frame, false)
     end
     if eventWindow ~= nil and eventWindow.SetHandler ~= nil then
         eventWindow:SetHandler("OnEnter", onHoverEnter)
@@ -1613,15 +1689,20 @@ local function updateHpBarColor(frame, unit, unitId, cfg, info, currentValue, ma
         return
     end
     local relation, rgba, textColor = getHpBarAppearance(frame, unit, unitId, cfg, info, currentValue, maxValue, nowMs)
+    frame.cache.hp_bar_rgba = rgba
+    local displayRgba = rgba
+    if frame.__ghb_hover_visible == true and frame.__ghb_click_target == true then
+        displayRgba = blendHoverTintColor(rgba)
+    end
     local key = table.concat({
-        tostring(rgba[1] or ""),
-        tostring(rgba[2] or ""),
-        tostring(rgba[3] or ""),
-        tostring(rgba[4] or "")
+        tostring(displayRgba[1] or ""),
+        tostring(displayRgba[2] or ""),
+        tostring(displayRgba[3] or ""),
+        tostring(displayRgba[4] or "")
     }, ",")
     if frame.cache.hp_bar_color_key ~= key then
         frame.cache.hp_bar_color_key = key
-        Helpers.ApplyStatusBarColor(frame.hpBar.statusBar, rgba)
+        Helpers.ApplyStatusBarColor(frame.hpBar.statusBar, displayRgba)
     end
     frame.cache.hp_bar_relation = relation
     if textColor ~= nil then
@@ -1648,6 +1729,7 @@ local function hideFrame(frame)
         frame.cache.shown = false
     end
     Role.Hide(frame)
+    setHoverHighlight(frame, false)
     setBorderVisible(frame.targetGlow, false, TARGET_GLOW_COLOR)
     setBorderVisible(frame.targetTint, false, TARGET_TINT_COLOR)
     hideCcWidgets(frame)
@@ -1699,6 +1781,7 @@ local function fadeFrame(frame, targetAlpha, nowMs)
         if target <= 0 then
             cache.shown = false
             Role.Hide(frame)
+            setHoverHighlight(frame, false)
             setBorderVisible(frame.targetGlow, false, TARGET_GLOW_COLOR)
             setBorderVisible(frame.targetTint, false, TARGET_TINT_COLOR)
             hideCcWidgets(frame)
@@ -1710,6 +1793,9 @@ end
 
 local function showFrame(frame, nowMs)
     fadeFrame(frame, 1, nowMs)
+    if frame ~= nil and frame.__ghb_click_target == true then
+        raiseWidget(frame.eventWindow)
+    end
 end
 
 local function fadeOutFrame(frame, nowMs)
@@ -2153,8 +2239,6 @@ local function updateOne(unit, context)
     frame.cache.hp_pct = (hpMax ~= nil and hpMax > 0) and math.max(0, math.min(1, hp / hpMax)) or 1
     frame.__ghb_unit = unit
     frame.__ghb_unit_id = unitId
-    applyPassThrough(frame, shouldPassThroughUnit(unit))
-    setEventWindowInteraction(frame, canClickTargetUnit(unit, settings))
     Helpers.SafeShow(frame.nameLabel, cfg.show_name ~= false)
     Helpers.SafeShow(frame.guildLabel, cfg.show_guild and guildText ~= "")
     Helpers.SafeShow(frame.roleLabel, false)
@@ -2186,6 +2270,8 @@ local function updateOne(unit, context)
         hideCcWidgets(frame)
     end
 
+    applyPassThrough(frame, shouldPassThroughUnit(unit))
+    setEventWindowInteraction(frame, canClickTargetUnit(unit, settings))
     setFrameDisplayEnabled(frame, true)
     frame.cache.data_active = true
     if context.include_position ~= false then

@@ -237,6 +237,9 @@ function Layout.Apply(frame, cfg, content)
             frame.eventWindow:RemoveAllAnchors()
             frame.eventWindow:AddAnchor("TOPLEFT", frame.hpBar, "TOPLEFT", -3, -3)
             frame.eventWindow:AddAnchor("BOTTOMRIGHT", frame.hpBar, "BOTTOMRIGHT", 3, 3)
+            if frame.eventWindow.Raise ~= nil then
+                frame.eventWindow:Raise()
+            end
         end)
     end
     if frame.mpBar ~= nil then
