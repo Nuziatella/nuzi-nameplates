@@ -1,11 +1,11 @@
 local api = require("api")
 
 local function loadModule(name)
-    local ok, mod = pcall(require, "gharka-bars/" .. name)
+    local ok, mod = pcall(require, "nuzi-nameplates/" .. name)
     if ok then
         return mod
     end
-    ok, mod = pcall(require, "gharka-bars." .. name)
+    ok, mod = pcall(require, "nuzi-nameplates." .. name)
     if ok then
         return mod
     end
@@ -634,7 +634,7 @@ local function createComboBox(id, parent, items, x, y, width, height)
     if combo == nil then
         return nil
     end
-    combo.__ghb_items = items or {}
+    combo.__nnp_items = items or {}
     pcall(function()
         if combo.AddAnchor ~= nil then
             local anchored = pcall(function()
@@ -648,11 +648,11 @@ local function createComboBox(id, parent, items, x, y, width, height)
             combo:SetExtent(width or 180, height or 24)
         end
         if combo.AddItem ~= nil then
-            for _, item in ipairs(combo.__ghb_items) do
+            for _, item in ipairs(combo.__nnp_items) do
                 combo:AddItem(tostring(item))
             end
         else
-            combo.dropdownItem = combo.__ghb_items
+            combo.dropdownItem = combo.__nnp_items
         end
         if combo.Show ~= nil then
             combo:Show(true)
@@ -665,7 +665,7 @@ local function setComboItems(ctrl, items)
     if ctrl == nil then
         return
     end
-    ctrl.__ghb_items = items or {}
+    ctrl.__nnp_items = items or {}
     if ctrl.AddItem ~= nil then
         pcall(function()
             if ctrl.Clear ~= nil then
@@ -673,13 +673,13 @@ local function setComboItems(ctrl, items)
             elseif ctrl.RemoveAllItems ~= nil then
                 ctrl:RemoveAllItems()
             end
-            for _, item in ipairs(ctrl.__ghb_items) do
+            for _, item in ipairs(ctrl.__nnp_items) do
                 ctrl:AddItem(tostring(item))
             end
         end)
         return
     end
-    ctrl.dropdownItem = ctrl.__ghb_items
+    ctrl.dropdownItem = ctrl.__nnp_items
 end
 
 local function getComboIndexRaw(ctrl)
@@ -712,19 +712,19 @@ local function setComboIndex1Based(ctrl, idx)
             return
         end
         if raw == idx then
-            ctrl.__ghb_index_base = 1
+            ctrl.__nnp_index_base = 1
         elseif raw == (idx - 1) then
-            ctrl.__ghb_index_base = 0
+            ctrl.__nnp_index_base = 0
         end
     end
 
     if ctrl.Select ~= nil then
         local selValue = idx
         if ctrl.GetSelIndex ~= nil and ctrl.GetSelectedIndex == nil then
-            ctrl.__ghb_index_base = 0
+            ctrl.__nnp_index_base = 0
             selValue = idx - 1
         else
-            ctrl.__ghb_index_base = 1
+            ctrl.__nnp_index_base = 1
         end
         pcall(function()
             ctrl:Select(selValue)
@@ -744,10 +744,10 @@ local function setComboIndex1Based(ctrl, idx)
     end
 
     if ctrl.SetSelectedIndex ~= nil then
-        ctrl.__ghb_index_base = nil
+        ctrl.__nnp_index_base = nil
         local raw = trySetter(ctrl.SetSelectedIndex, idx)
         updateBase(raw)
-        if ctrl.__ghb_index_base == nil then
+        if ctrl.__nnp_index_base == nil then
             raw = trySetter(ctrl.SetSelectedIndex, idx - 1)
             updateBase(raw)
         end
@@ -755,7 +755,7 @@ local function setComboIndex1Based(ctrl, idx)
     end
 
     if ctrl.SetSelIndex ~= nil then
-        ctrl.__ghb_index_base = 0
+        ctrl.__nnp_index_base = 0
         updateBase(trySetter(ctrl.SetSelIndex, idx - 1))
     end
 end
@@ -765,7 +765,7 @@ local function getComboIndex1Based(ctrl, maxCount)
     if raw == nil then
         return nil
     end
-    local base = ctrl.__ghb_index_base
+    local base = ctrl.__nnp_index_base
     if base == nil then
         if raw == 0 then
             base = 0
@@ -776,7 +776,7 @@ local function getComboIndex1Based(ctrl, maxCount)
         else
             base = 1
         end
-        ctrl.__ghb_index_base = base
+        ctrl.__nnp_index_base = base
     end
     if base == 0 then
         return raw + 1
@@ -1223,7 +1223,7 @@ local function createColorSwatchButton(id, parent, x, y, width, height)
         local background = button:CreateColorDrawable(0.05, 0.04, 0.03, 0.96, "background")
         background:AddAnchor("TOPLEFT", button, 0, 0)
         background:AddAnchor("BOTTOMRIGHT", button, 0, 0)
-        button.__ghb_fill = createInsetFill(button, 3, "artwork")
+        button.__nnp_fill = createInsetFill(button, 3, "artwork")
         local gloss = button:CreateColorDrawable(1, 1, 1, 0.08, "overlay")
         gloss:AddAnchor("TOPLEFT", button, 3, 3)
         gloss:AddAnchor("TOPRIGHT", button, -3, 3)
@@ -1243,11 +1243,11 @@ local function createColorPreviewFrame(id, parent, group, x, y, width, height)
     end
     addPanelBackground(frame, 0.84)
     addPanelAccent(frame, math.max(12, math.floor((height or 24) * 0.42)), 0.06)
-    frame.__ghb_preview_mode = type(group) == "table" and group.preview or "bar"
-    if frame.__ghb_preview_mode == "text" then
-        frame.__ghb_preview_label = createLabel(id .. "Text", frame, "Preview Text", 14, 15, 14, (width or 140) - 28)
+    frame.__nnp_preview_mode = type(group) == "table" and group.preview or "bar"
+    if frame.__nnp_preview_mode == "text" then
+        frame.__nnp_preview_label = createLabel(id .. "Text", frame, "Preview Text", 14, 15, 14, (width or 140) - 28)
     else
-        frame.__ghb_preview_label = createLabel(id .. "Text", frame, "Bar Preview", 14, 8, 12, (width or 140) - 28)
+        frame.__nnp_preview_label = createLabel(id .. "Text", frame, "Bar Preview", 14, 8, 12, (width or 140) - 28)
         local bar = createEmptyChild(id .. "Bar", frame, 14, 28, (width or 140) - 28, 18)
         if bar ~= nil then
             if bar.CreateColorDrawable ~= nil then
@@ -1255,11 +1255,11 @@ local function createColorPreviewFrame(id, parent, group, x, y, width, height)
                 barBg:AddAnchor("TOPLEFT", bar, 0, 0)
                 barBg:AddAnchor("BOTTOMRIGHT", bar, 0, 0)
             end
-            frame.__ghb_preview_bar = createPreviewStatusBar(id .. "StatusBar", bar, group, 18)
-            if frame.__ghb_preview_bar ~= nil then
-                frame.__ghb_preview_statusbar = frame.__ghb_preview_bar.statusBar or frame.__ghb_preview_bar
+            frame.__nnp_preview_bar = createPreviewStatusBar(id .. "StatusBar", bar, group, 18)
+            if frame.__nnp_preview_bar ~= nil then
+                frame.__nnp_preview_statusbar = frame.__nnp_preview_bar.statusBar or frame.__nnp_preview_bar
             else
-                frame.__ghb_preview_fill = createInsetFill(bar, 2, "artwork")
+                frame.__nnp_preview_fill = createInsetFill(bar, 2, "artwork")
             end
         end
     end
@@ -1270,20 +1270,20 @@ local function updateColorPreview(preview, group, color)
     if preview == nil then
         return
     end
-    local mode = preview.__ghb_preview_mode or (type(group) == "table" and group.preview) or "bar"
+    local mode = preview.__nnp_preview_mode or (type(group) == "table" and group.preview) or "bar"
     if mode == "text" then
-        setLabelColor255(preview.__ghb_preview_label, color)
-    elseif preview.__ghb_preview_statusbar ~= nil then
+        setLabelColor255(preview.__nnp_preview_label, color)
+    elseif preview.__nnp_preview_statusbar ~= nil then
         local previewMode = (type(group) == "table" and group.key == "mp_bar_color") and "mp" or "hp"
-        if preview.__ghb_preview_bar ~= nil and preview.__ghb_preview_texture_mode ~= previewMode then
-            preview.__ghb_preview_texture_mode = previewMode
+        if preview.__nnp_preview_bar ~= nil and preview.__nnp_preview_texture_mode ~= previewMode then
+            preview.__nnp_preview_texture_mode = previewMode
             local texture = getPreviewBarTexture(group)
-            if preview.__ghb_preview_bar.ApplyBarTexture ~= nil then
+            if preview.__nnp_preview_bar.ApplyBarTexture ~= nil then
                 safeCall(function()
                     if texture ~= nil then
-                        preview.__ghb_preview_bar:ApplyBarTexture(texture)
+                        preview.__nnp_preview_bar:ApplyBarTexture(texture)
                     else
-                        preview.__ghb_preview_bar:ApplyBarTexture()
+                        preview.__nnp_preview_bar:ApplyBarTexture()
                     end
                 end)
             end
@@ -1296,10 +1296,10 @@ local function updateColorPreview(preview, group, color)
             resolved[4] / 255
         }
         if Helpers ~= nil and Helpers.ApplyStatusBarColor ~= nil then
-            Helpers.ApplyStatusBarColor(preview.__ghb_preview_statusbar, rgba)
+            Helpers.ApplyStatusBarColor(preview.__nnp_preview_statusbar, rgba)
         end
-    elseif preview.__ghb_preview_fill ~= nil then
-        setDrawableColor(preview.__ghb_preview_fill, color)
+    elseif preview.__nnp_preview_fill ~= nil then
+        setDrawableColor(preview.__nnp_preview_fill, color)
     end
 end
 
@@ -1307,8 +1307,8 @@ local function updateColorCardDisplay(card, group, color)
     if type(card) ~= "table" then
         return
     end
-    if card.swatch ~= nil and card.swatch.__ghb_fill ~= nil then
-        setDrawableColor(card.swatch.__ghb_fill, color)
+    if card.swatch ~= nil and card.swatch.__nnp_fill ~= nil then
+        setDrawableColor(card.swatch.__nnp_fill, color)
     end
     safeSetText(card.hex_label, formatColorHex(color))
     safeSetText(card.rgb_label, formatColorRgb(color))
@@ -1334,8 +1334,8 @@ local function refreshColorPickerDisplay(style)
     if picker.hint_label ~= nil then
         picker.hint_label:SetText(group ~= nil and tostring(group.description or "") or "")
     end
-    if picker.swatch ~= nil and picker.swatch.__ghb_fill ~= nil then
-        setDrawableColor(picker.swatch.__ghb_fill, color)
+    if picker.swatch ~= nil and picker.swatch.__nnp_fill ~= nil then
+        setDrawableColor(picker.swatch.__nnp_fill, color)
     end
     safeSetText(picker.hex_label, formatColorHex(color))
     safeSetText(picker.rgb_label, formatColorRgb(color))
@@ -1424,14 +1424,14 @@ local function ensureColorPicker(parent)
         return picker.overlay
     end
 
-    picker.overlay = createEmptyChild("ghbColorPickerOverlay", parent, 0, 0, 748, 770)
+    picker.overlay = createEmptyChild("nnpColorPickerOverlay", parent, 0, 0, 748, 770)
     if picker.overlay ~= nil and picker.overlay.CreateColorDrawable ~= nil then
         local veil = picker.overlay:CreateColorDrawable(0.01, 0.01, 0.01, 0.54, "background")
         veil:AddAnchor("TOPLEFT", picker.overlay, 0, 0)
         veil:AddAnchor("BOTTOMRIGHT", picker.overlay, 0, 0)
     end
 
-    picker.panel = createEmptyChild("ghbColorPickerPanel", picker.overlay, 78, 84, 592, 562)
+    picker.panel = createEmptyChild("nnpColorPickerPanel", picker.overlay, 78, 84, 592, 562)
     if picker.panel ~= nil then
         addPanelBackground(picker.panel, 0.96)
         addPanelAccent(picker.panel, 50, 0.14)
@@ -1439,15 +1439,15 @@ local function ensureColorPicker(parent)
     end
 
     local panel = picker.panel or picker.overlay
-    picker.title_label = createLabel("ghbColorPickerTitle", panel, "Edit color", 18, 16, 18, 320)
-    picker.hint_label = createLabel("ghbColorPickerHint", panel, "", 18, 40, 12, 320)
-    picker.swatch = createColorSwatchButton("ghbColorPickerSwatch", panel, 376, 22, 188, 72)
-    picker.hex_label = createLabel("ghbColorPickerHex", panel, "", 376, 102, 13, 188)
-    picker.rgb_label = createLabel("ghbColorPickerRgb", panel, "", 376, 124, 12, 188)
-    picker.preview = createColorPreviewFrame("ghbColorPickerPreview", panel, { preview = "bar" }, 376, 154, 188, 94)
+    picker.title_label = createLabel("nnpColorPickerTitle", panel, "Edit color", 18, 16, 18, 320)
+    picker.hint_label = createLabel("nnpColorPickerHint", panel, "", 18, 40, 12, 320)
+    picker.swatch = createColorSwatchButton("nnpColorPickerSwatch", panel, 376, 22, 188, 72)
+    picker.hex_label = createLabel("nnpColorPickerHex", panel, "", 376, 102, 13, 188)
+    picker.rgb_label = createLabel("nnpColorPickerRgb", panel, "", 376, 124, 12, 188)
+    picker.preview = createColorPreviewFrame("nnpColorPickerPreview", panel, { preview = "bar" }, 376, 154, 188, 94)
 
-    createLabel("ghbColorPickerPaletteTitle", panel, "Palette", 22, 80, 15, 120)
-    createLabel("ghbColorPickerPaletteHint", panel, "Click a swatch for quick picks, then fine-tune below.", 22, 104, 12, 320)
+    createLabel("nnpColorPickerPaletteTitle", panel, "Palette", 22, 80, 15, 120)
+    createLabel("nnpColorPickerPaletteHint", panel, "Click a swatch for quick picks, then fine-tune below.", 22, 104, 12, 320)
 
     picker.palette_cells = {}
     local paletteColumns = 13
@@ -1462,7 +1462,7 @@ local function ensureColorPicker(parent)
         for column = 1, paletteColumns do
             local index = ((row - 1) * paletteColumns) + column
             local cell = createColorSwatchButton(
-                "ghbColorPickerCell" .. tostring(index),
+                "nnpColorPickerCell" .. tostring(index),
                 panel,
                 startX + ((column - 1) * (cellWidth + gapX)),
                 startY + ((row - 1) * (cellHeight + gapY)),
@@ -1470,12 +1470,12 @@ local function ensureColorPicker(parent)
                 cellHeight
             )
             local cellColor = paletteCellColor(column, row, paletteColumns, paletteRows)
-            cell.__ghb_palette_color = cellColor
-            if cell.__ghb_fill ~= nil then
-                setDrawableColor(cell.__ghb_fill, cellColor)
+            cell.__nnp_palette_color = cellColor
+            if cell.__nnp_fill ~= nil then
+                setDrawableColor(cell.__nnp_fill, cellColor)
             end
             cell:SetHandler("OnClick", function()
-                applyPickerColor(cell.__ghb_palette_color)
+                applyPickerColor(cell.__nnp_palette_color)
             end)
             picker.palette_cells[index] = cell
         end
@@ -1490,7 +1490,7 @@ local function ensureColorPicker(parent)
     }
     for channelOffset, channel in ipairs(channels) do
         local _, slider, value = createSlider(
-            "ghbColorPickerSlider" .. channel.label,
+            "nnpColorPickerSlider" .. channel.label,
             panel,
             channel.label,
             22,
@@ -1514,9 +1514,9 @@ local function ensureColorPicker(parent)
         end
     end
 
-    picker.reset_button = createButton("ghbColorPickerReset", panel, "Default", 22, 500, 96, 28)
-    picker.cancel_button = createButton("ghbColorPickerCancel", panel, "Cancel", 408, 500, 72, 28)
-    picker.apply_button = createButton("ghbColorPickerApply", panel, "Apply", 488, 500, 76, 28)
+    picker.reset_button = createButton("nnpColorPickerReset", panel, "Default", 22, 500, 96, 28)
+    picker.cancel_button = createButton("nnpColorPickerCancel", panel, "Cancel", 408, 500, 72, 28)
+    picker.apply_button = createButton("nnpColorPickerApply", panel, "Apply", 488, 500, 76, 28)
     picker.reset_button:SetHandler("OnClick", function()
         local activeGroup = picker.active_group
         if activeGroup == nil then
@@ -1540,7 +1540,7 @@ local function ensureColorPicker(parent)
 end
 
 local function createColorCard(group, parent, x, y, width, height)
-    local card = createEmptyChild("ghbColorCard" .. tostring(group.key), parent, x, y, width, height)
+    local card = createEmptyChild("nnpColorCard" .. tostring(group.key), parent, x, y, width, height)
     if card == nil then
         return nil
     end
@@ -1549,9 +1549,9 @@ local function createColorCard(group, parent, x, y, width, height)
     addPanelDivider(card, 42, 14, -14, 0.10)
 
     local cardWidth = width or 320
-    local title = createLabel("ghbColorCardTitle" .. tostring(group.key), card, tostring(group.label or group.key or ""), 16, 12, 15, 184)
+    local title = createLabel("nnpColorCardTitle" .. tostring(group.key), card, tostring(group.label or group.key or ""), 16, 12, 15, 184)
     local description = createLabel(
-        "ghbColorCardDesc" .. tostring(group.key),
+        "nnpColorCardDesc" .. tostring(group.key),
         card,
         tostring(group.description or "Color setting"),
         16,
@@ -1559,12 +1559,12 @@ local function createColorCard(group, parent, x, y, width, height)
         12,
         math.max(96, cardWidth - 148)
     )
-    local swatch = createColorSwatchButton("ghbColorCardSwatch" .. tostring(group.key), card, cardWidth - 86, 14, 70, 48)
-    local hexLabel = createLabel("ghbColorCardHex" .. tostring(group.key), card, "", cardWidth - 114, 70, 13, 112)
-    local rgbLabel = createLabel("ghbColorCardRgb" .. tostring(group.key), card, "", 16, 70, 12, 188)
-    local preview = createColorPreviewFrame("ghbColorCardPreview" .. tostring(group.key), card, group, 16, 96, 180, 54)
-    local editBtn = createButton("ghbColorCardEdit" .. tostring(group.key), card, "Edit", cardWidth - 146, 112, 58, 28)
-    local resetBtn = createButton("ghbColorCardReset" .. tostring(group.key), card, "Reset", cardWidth - 80, 112, 58, 28)
+    local swatch = createColorSwatchButton("nnpColorCardSwatch" .. tostring(group.key), card, cardWidth - 86, 14, 70, 48)
+    local hexLabel = createLabel("nnpColorCardHex" .. tostring(group.key), card, "", cardWidth - 114, 70, 13, 112)
+    local rgbLabel = createLabel("nnpColorCardRgb" .. tostring(group.key), card, "", 16, 70, 12, 188)
+    local preview = createColorPreviewFrame("nnpColorCardPreview" .. tostring(group.key), card, group, 16, 96, 180, 54)
+    local editBtn = createButton("nnpColorCardEdit" .. tostring(group.key), card, "Edit", cardWidth - 146, 112, 58, 28)
+    local resetBtn = createButton("nnpColorCardReset" .. tostring(group.key), card, "Reset", cardWidth - 80, 112, 58, 28)
 
     local function openGroupPicker()
         openColorPicker(group)
@@ -1661,11 +1661,11 @@ local function syncProfileNameInput(text)
         return
     end
     local current = safeGetText(input)
-    local lastSynced = tostring(input.__ghb_last_synced_text or "")
+    local lastSynced = tostring(input.__nnp_last_synced_text or "")
     local target = tostring(text or "")
     if current == "" or current == lastSynced then
         safeSetText(input, target)
-        input.__ghb_last_synced_text = target
+        input.__nnp_last_synced_text = target
     end
 end
 
@@ -1867,7 +1867,7 @@ local function ensureWindow()
             return api.Interface:CreateEmptyWindow(Shared.CONSTANTS.WINDOW_ID, "UIParent")
         end
         if api.Interface ~= nil and api.Interface.CreateWindow ~= nil then
-            return api.Interface:CreateWindow(Shared.CONSTANTS.WINDOW_ID, "Gharka Bars Settings", 0, 0)
+            return api.Interface:CreateWindow(Shared.CONSTANTS.WINDOW_ID, "Nuzi Nameplates Settings", 0, 0)
         end
         return nil
     end)
@@ -1888,21 +1888,21 @@ local function ensureWindow()
     )
     attachShiftDrag(wnd, "window", nil)
 
-    local shell = createEmptyChild("ghbWindowShell", wnd, 0, 0, BASE_WINDOW_WIDTH, BASE_WINDOW_HEIGHT)
+    local shell = createEmptyChild("nnpWindowShell", wnd, 0, 0, BASE_WINDOW_WIDTH, BASE_WINDOW_HEIGHT)
     if shell ~= nil then
         addPanelBackground(shell, 0.94)
         addPanelAccent(shell, 44, 0.08)
         addPanelDivider(shell, 44, 12, -12, 0.12)
     end
 
-    local header = createEmptyChild("ghbHeader", wnd, 0, 0, BASE_WINDOW_WIDTH, 24)
+    local header = createEmptyChild("nnpHeader", wnd, 0, 0, BASE_WINDOW_WIDTH, 24)
     if header ~= nil then
         addPanelBackground(header, 0.98)
         addPanelAccent(header, 24, 0.10)
         addPanelDivider(header, 24, 10, -10, 0.14)
         attachShiftDrag(header, "window", nil, wnd)
-        createLabel("ghbHeaderTitle", header, "Gharka Bars Settings", 14, 3, 15, 260)
-        local closeBtn = createButton("ghbHeaderClose", header, "X", BASE_WINDOW_WIDTH - 38, 1, 26, 22)
+        createLabel("nnpHeaderTitle", header, "Nuzi Nameplates Settings", 14, 3, 15, 260)
+        local closeBtn = createButton("nnpHeaderClose", header, "X", BASE_WINDOW_WIDTH - 38, 1, 26, 22)
         if closeBtn ~= nil and closeBtn.SetHandler ~= nil then
             closeBtn:SetHandler("OnClick", function()
                 safeShow(SettingsUi.window, false)
@@ -1912,13 +1912,13 @@ local function ensureWindow()
         SettingsUi.controls.header_close = closeBtn
     end
 
-    local navPanel = createEmptyChild("ghbNavPanel", wnd, 12, 38, 168, 834)
+    local navPanel = createEmptyChild("nnpNavPanel", wnd, 12, 38, 168, 834)
     if navPanel ~= nil then
         addPanelBackground(navPanel, 0.88)
         addPanelAccent(navPanel, 42, 0.12)
     end
 
-    local contentPanel = createEmptyChild("ghbContentPanel", wnd, 192, 26, 776, 846)
+    local contentPanel = createEmptyChild("nnpContentPanel", wnd, 192, 26, 776, 846)
     if contentPanel ~= nil then
         addPanelBackground(contentPanel, 0.86)
         addPanelAccent(contentPanel, 54, 0.12)
@@ -1931,11 +1931,11 @@ local function ensureWindow()
 
     local navParent = navPanel or wnd
     local contentParent = contentPanel or wnd
-    createLabel("ghbNavTitle", navParent, "Gharka Bars", 14, 12, 18, 132)
-    createLabel("ghbNavSubtitle", navParent, "Overlay settings", 14, 36, 12, 132)
-    createLabel("ghbNavSectionTitle", navParent, "Sections", 14, 74, 15, 132)
+    createLabel("nnpNavTitle", navParent, "Nuzi Nameplates", 14, 12, 18, 132)
+    createLabel("nnpNavSubtitle", navParent, "Overlay settings", 14, 36, 12, 132)
+    createLabel("nnpNavSectionTitle", navParent, "Sections", 14, 74, 15, 132)
     createLabel(
-        "ghbNavHint",
+        "nnpNavHint",
         navParent,
         "Shift+drag the launcher or settings window to move them.",
         14,
@@ -1944,12 +1944,12 @@ local function ensureWindow()
         140
     )
 
-    SettingsUi.controls.page_header_title = createLabel("ghbPageHeaderTitle", contentParent, "", 18, 14, 18, 520)
-    SettingsUi.controls.page_header_summary = createLabel("ghbPageHeaderSummary", contentParent, "", 18, 40, 12, 720)
+    SettingsUi.controls.page_header_title = createLabel("nnpPageHeaderTitle", contentParent, "", 18, 14, 18, 520)
+    SettingsUi.controls.page_header_summary = createLabel("nnpPageHeaderSummary", contentParent, "", 18, 40, 12, 720)
 
     local navY = 106
     for _, pageDef in ipairs(PAGE_DEFS) do
-        local btn = createButton("ghbNav" .. pageDef.key, navParent, tostring(pageDef.label or pageDef.key), 10, navY, 146, 30)
+        local btn = createButton("nnpNav" .. pageDef.key, navParent, tostring(pageDef.label or pageDef.key), 10, navY, 146, 30)
         SettingsUi.controls["nav_" .. pageDef.key] = btn
         btn:SetHandler("OnClick", function()
             setActivePage(pageDef.key)
@@ -1959,7 +1959,7 @@ local function ensureWindow()
 
     local pageParents = {}
     for _, pageDef in ipairs(PAGE_DEFS) do
-        local pageRoot = createEmptyChild("ghbPageRoot" .. pageDef.key, contentParent, 0, 0, 748, 770)
+        local pageRoot = createEmptyChild("nnpPageRoot" .. pageDef.key, contentParent, 0, 0, 748, 770)
         if pageRoot ~= nil then
             addPageWidget(pageDef.key, pageRoot)
             pageParents[pageDef.key] = pageRoot
@@ -1973,20 +1973,20 @@ local function ensureWindow()
     Pages.BuildCcPage(ctx, pageParents.cc or contentParent)
     Pages.BuildColorsPage(ctx, pageParents.colors or contentParent)
 
-    local footerPanel = createEmptyChild("ghbFooterPanel", contentParent, 18, 776, 738, 70)
+    local footerPanel = createEmptyChild("nnpFooterPanel", contentParent, 18, 776, 738, 70)
     if footerPanel ~= nil then
         addPanelBackground(footerPanel, 0.80)
         addPanelAccent(footerPanel, 28, 0.08)
     end
     local footerParent = footerPanel or contentParent
     SettingsUi.controls.footer_panel = footerPanel
-    SettingsUi.controls.status_label = createLabel("ghbStatus", footerParent, "", 16, 10, 12, 690)
-    local saveBtn = createButton("ghbSave", footerParent, "Save", 16, 34, 72, 28)
-    local profileInput = createEdit("ghbProfileName", footerParent, "", 96, 36, 158, 24, 48, "Profile name")
-    local profileDropdown = createComboBox("ghbProfileDropdown", footerParent, { Shared.GetActiveProfileFileName() }, 264, 36, 180, 24)
-    local loadBtn = createButton("ghbLoadProfile", footerParent, "Load", 452, 34, 72, 28)
-    local resetStyleBtn = createButton("ghbResetStyle", footerParent, "Reset Style", 532, 34, 96, 28)
-    local resetAllBtn = createButton("ghbResetAll", footerParent, "Reset All", 636, 34, 96, 28)
+    SettingsUi.controls.status_label = createLabel("nnpStatus", footerParent, "", 16, 10, 12, 690)
+    local saveBtn = createButton("nnpSave", footerParent, "Save", 16, 34, 72, 28)
+    local profileInput = createEdit("nnpProfileName", footerParent, "", 96, 36, 158, 24, 48, "Profile name")
+    local profileDropdown = createComboBox("nnpProfileDropdown", footerParent, { Shared.GetActiveProfileFileName() }, 264, 36, 180, 24)
+    local loadBtn = createButton("nnpLoadProfile", footerParent, "Load", 452, 34, 72, 28)
+    local resetStyleBtn = createButton("nnpResetStyle", footerParent, "Reset Style", 532, 34, 96, 28)
+    local resetAllBtn = createButton("nnpResetAll", footerParent, "Reset All", 636, 34, 96, 28)
 
     SettingsUi.controls.profile_name_input = profileInput
     SettingsUi.controls.profile_dropdown = profileDropdown
@@ -2007,7 +2007,7 @@ local function ensureWindow()
             refreshControls()
             safeSetText(profileInput, Shared.GetActiveProfileFileName())
             if profileInput ~= nil then
-                profileInput.__ghb_last_synced_text = Shared.GetActiveProfileFileName()
+                profileInput.__nnp_last_synced_text = Shared.GetActiveProfileFileName()
             end
             setStatus("Saved profile: " .. tostring(result or Shared.GetActiveProfileFileName()))
         else
@@ -2026,7 +2026,7 @@ local function ensureWindow()
             refreshControls()
             safeSetText(profileInput, Shared.GetActiveProfileFileName())
             if profileInput ~= nil then
-                profileInput.__ghb_last_synced_text = Shared.GetActiveProfileFileName()
+                profileInput.__nnp_last_synced_text = Shared.GetActiveProfileFileName()
             end
             setStatus("Loaded profile: " .. tostring(result or Shared.GetActiveProfileFileName()))
         else
@@ -2068,14 +2068,14 @@ local function ensureButton()
     SettingsUi.button = btn
     SettingsUi.button_icon = createImageDrawable(
         btn,
-        "gharkaBarsSettingsButtonIcon",
-        assetPath("gharka-bars/icon_launcher.png"),
+        "nuziNameplatesSettingsButtonIcon",
+        assetPath("nuzi-nameplates/icon_launcher.png"),
         "artwork",
         getLauncherSize(),
         getLauncherSize()
     )
     if SettingsUi.button_icon == nil and btn.SetText ~= nil then
-        btn:SetText("GB")
+        btn:SetText("NP")
     end
     applyLauncherLayout()
     btn:SetHandler("OnClick", function()

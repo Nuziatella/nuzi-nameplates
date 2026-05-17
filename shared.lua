@@ -7,22 +7,34 @@ local Settings = Core.Settings
 local Shared = {}
 
 Shared.CONSTANTS = {
-    ADDON_ID = "gharka-bars",
-    TITLE = "Gharka Bars",
-    VERSION = "1.5.73",
-    BUTTON_ID = "gharkaBarsSettingsButton",
-    WINDOW_ID = "gharkaBarsSettingsWindow",
-    SETTINGS_FILE_PATH = "gharka-bars/.data/settings.txt",
-    ICON_SETTINGS_FILE_PATH = "gharka-bars/.data/icon_settings.txt",
-    PROFILE_STATE_FILE_PATH = "gharka-bars/.data/profile_state.txt",
-    LEGACY_SETTINGS_FILE_PATH = "gharka-bars/settings.txt",
-    SETTINGS_BACKUP_FILE_PATH = "gharka-bars/.data/settings_backup.txt",
-    LEGACY_SETTINGS_BACKUP_FILE_PATH = "gharka-bars/settings_backup.txt",
-    SETTINGS_BACKUP_INDEX_FILE_PATH = "gharka-bars/.data/backups/index.txt",
-    LEGACY_SETTINGS_BACKUP_INDEX_FILE_PATH = "gharka-bars/backups/index.txt",
-    SETTINGS_BACKUP_INDEX_FALLBACK_FILE_PATH = "gharka-bars/.data/settings_backup_index.txt",
-    LEGACY_SETTINGS_BACKUP_INDEX_FALLBACK_FILE_PATH = "gharka-bars/settings_backup_index.txt",
-    SETTINGS_BACKUP_DIR = "gharka-bars/.data/backups"
+    ADDON_ID = "nuzi-nameplates",
+    TITLE = "Nuzi Nameplates",
+    VERSION = "1.6.0",
+    BUTTON_ID = "nuziNameplatesSettingsButton",
+    WINDOW_ID = "nuziNameplatesSettingsWindow",
+    DATA_DIR = "nuzi-nameplates/.data",
+    LEGACY_DATA_DIR = "gharka-bars/.data",
+    SETTINGS_FILE_PATH = "nuzi-nameplates/.data/settings.txt",
+    ICON_SETTINGS_FILE_PATH = "nuzi-nameplates/.data/icon_settings.txt",
+    PROFILE_STATE_FILE_PATH = "nuzi-nameplates/.data/profile_state.txt",
+    LEGACY_SETTINGS_FILE_PATH = "nuzi-nameplates/settings.txt",
+    GHARKA_SETTINGS_FILE_PATH = "gharka-bars/.data/settings.txt",
+    GHARKA_ROOT_SETTINGS_FILE_PATH = "gharka-bars/settings.txt",
+    GHARKA_ICON_SETTINGS_FILE_PATH = "gharka-bars/.data/icon_settings.txt",
+    GHARKA_PROFILE_STATE_FILE_PATH = "gharka-bars/.data/profile_state.txt",
+    SETTINGS_BACKUP_FILE_PATH = "nuzi-nameplates/.data/settings_backup.txt",
+    LEGACY_SETTINGS_BACKUP_FILE_PATH = "nuzi-nameplates/settings_backup.txt",
+    GHARKA_SETTINGS_BACKUP_FILE_PATH = "gharka-bars/.data/settings_backup.txt",
+    GHARKA_ROOT_SETTINGS_BACKUP_FILE_PATH = "gharka-bars/settings_backup.txt",
+    SETTINGS_BACKUP_INDEX_FILE_PATH = "nuzi-nameplates/.data/backups/index.txt",
+    LEGACY_SETTINGS_BACKUP_INDEX_FILE_PATH = "nuzi-nameplates/backups/index.txt",
+    GHARKA_SETTINGS_BACKUP_INDEX_FILE_PATH = "gharka-bars/.data/backups/index.txt",
+    GHARKA_ROOT_SETTINGS_BACKUP_INDEX_FILE_PATH = "gharka-bars/backups/index.txt",
+    SETTINGS_BACKUP_INDEX_FALLBACK_FILE_PATH = "nuzi-nameplates/.data/settings_backup_index.txt",
+    LEGACY_SETTINGS_BACKUP_INDEX_FALLBACK_FILE_PATH = "nuzi-nameplates/settings_backup_index.txt",
+    GHARKA_SETTINGS_BACKUP_INDEX_FALLBACK_FILE_PATH = "gharka-bars/.data/settings_backup_index.txt",
+    GHARKA_ROOT_SETTINGS_BACKUP_INDEX_FALLBACK_FILE_PATH = "gharka-bars/settings_backup_index.txt",
+    SETTINGS_BACKUP_DIR = "nuzi-nameplates/.data/backups"
 }
 
 local function styleDefaults()
@@ -183,10 +195,92 @@ local function normalizeMainSettings(settings)
     return changed
 end
 
+local function readFlexible(path)
+    local value = Settings.ReadFlexibleTable(path, {
+        mode = "serialized_then_flat",
+        raw_text_fallback = true
+    })
+    return value
+end
+
+local function copyTableIfMissing(sourcePath, targetPath)
+    if Settings.HasTableFile(targetPath) then
+        return false
+    end
+
+    local value = readFlexible(sourcePath)
+    if type(value) ~= "table" then
+        return false
+    end
+
+    local ok = Settings.WriteTable(targetPath, value, "serialized_then_flat")
+    return ok and true or false
+end
+
+local function migrateLegacyDataPath(path)
+    local text = Runtime.NormalizePath(path)
+    local oldPrefix = Shared.CONSTANTS.LEGACY_DATA_DIR .. "/"
+    local newPrefix = Shared.CONSTANTS.DATA_DIR .. "/"
+    if string.sub(text, 1, string.len(oldPrefix)) == oldPrefix then
+        return newPrefix .. string.sub(text, string.len(oldPrefix) + 1), text
+    end
+    return text, nil
+end
+
+local function migrateLegacyProfilePath(state, key)
+    if type(state) ~= "table" or type(state[key]) ~= "string" then
+        return false
+    end
+
+    local migratedPath, legacyPath = migrateLegacyDataPath(state[key])
+    if legacyPath == nil then
+        return false
+    end
+
+    copyTableIfMissing(legacyPath, migratedPath)
+    state[key] = migratedPath
+    return true
+end
+
+local function migrateLegacyProfileState()
+    if Settings.HasTableFile(Shared.CONSTANTS.PROFILE_STATE_FILE_PATH) then
+        return false
+    end
+
+    local state = readFlexible(Shared.CONSTANTS.GHARKA_PROFILE_STATE_FILE_PATH)
+    if type(state) ~= "table" then
+        return false
+    end
+
+    local changed = migrateLegacyProfilePath(state, "active_profile")
+    for key in pairs(state) do
+        if string.match(tostring(key), "^profile_%d%d%d$") ~= nil then
+            if migrateLegacyProfilePath(state, key) then
+                changed = true
+            end
+        end
+    end
+
+    local ok = Settings.WriteTable(Shared.CONSTANTS.PROFILE_STATE_FILE_PATH, state, "serialized_then_flat")
+    return ok and changed
+end
+
+local function migrateLegacyData()
+    copyTableIfMissing(Shared.CONSTANTS.GHARKA_SETTINGS_FILE_PATH, Shared.CONSTANTS.SETTINGS_FILE_PATH)
+    copyTableIfMissing(Shared.CONSTANTS.GHARKA_ROOT_SETTINGS_FILE_PATH, Shared.CONSTANTS.SETTINGS_FILE_PATH)
+    copyTableIfMissing(Shared.CONSTANTS.GHARKA_ICON_SETTINGS_FILE_PATH, Shared.CONSTANTS.ICON_SETTINGS_FILE_PATH)
+    migrateLegacyProfileState()
+end
+
 local store = Settings.CreateAddonStore(Shared.CONSTANTS, {
     read_mode = "serialized_then_flat",
     write_mode = "serialized_then_flat",
     read_raw_text_fallback = true,
+    legacy_settings_file_path = Shared.CONSTANTS.GHARKA_SETTINGS_FILE_PATH,
+    fallback_paths = {
+        Shared.CONSTANTS.LEGACY_SETTINGS_FILE_PATH,
+        Shared.CONSTANTS.GHARKA_ROOT_SETTINGS_FILE_PATH
+    },
     use_api_settings = false,
     save_global_settings = false,
     backups = {
@@ -199,11 +293,17 @@ local store = Settings.CreateAddonStore(Shared.CONSTANTS, {
         index_fallback_file_path = Shared.CONSTANTS.SETTINGS_BACKUP_INDEX_FALLBACK_FILE_PATH,
         legacy_index_paths = {
             Shared.CONSTANTS.LEGACY_SETTINGS_BACKUP_INDEX_FILE_PATH,
-            Shared.CONSTANTS.LEGACY_SETTINGS_BACKUP_INDEX_FALLBACK_FILE_PATH
+            Shared.CONSTANTS.LEGACY_SETTINGS_BACKUP_INDEX_FALLBACK_FILE_PATH,
+            Shared.CONSTANTS.GHARKA_SETTINGS_BACKUP_INDEX_FILE_PATH,
+            Shared.CONSTANTS.GHARKA_ROOT_SETTINGS_BACKUP_INDEX_FILE_PATH,
+            Shared.CONSTANTS.GHARKA_SETTINGS_BACKUP_INDEX_FALLBACK_FILE_PATH,
+            Shared.CONSTANTS.GHARKA_ROOT_SETTINGS_BACKUP_INDEX_FALLBACK_FILE_PATH
         },
         latest_backup_file_path = Shared.CONSTANTS.SETTINGS_BACKUP_FILE_PATH,
         legacy_latest_paths = {
-            Shared.CONSTANTS.LEGACY_SETTINGS_BACKUP_FILE_PATH
+            Shared.CONSTANTS.LEGACY_SETTINGS_BACKUP_FILE_PATH,
+            Shared.CONSTANTS.GHARKA_SETTINGS_BACKUP_FILE_PATH,
+            Shared.CONSTANTS.GHARKA_ROOT_SETTINGS_BACKUP_FILE_PATH
         },
         max_backups = 30
     },
@@ -211,8 +311,11 @@ local store = Settings.CreateAddonStore(Shared.CONSTANTS, {
         read_mode = "serialized_then_flat",
         write_mode = "serialized_then_flat",
         read_raw_text_fallback = true,
-        profile_dir = "gharka-bars/.data",
+        profile_dir = Shared.CONSTANTS.DATA_DIR,
         state_file_path = Shared.CONSTANTS.PROFILE_STATE_FILE_PATH,
+        legacy_state_paths = {
+            Shared.CONSTANTS.GHARKA_PROFILE_STATE_FILE_PATH
+        },
         state_mode = "serialized_then_flat",
         state_write_mode = "serialized_then_flat",
         state_raw_text_fallback = true
@@ -225,6 +328,7 @@ local store = Settings.CreateAddonStore(Shared.CONSTANTS, {
 
 local iconStore = Settings.CreateSidecarStore({
     settings_file_path = Shared.CONSTANTS.ICON_SETTINGS_FILE_PATH,
+    legacy_settings_file_path = Shared.CONSTANTS.GHARKA_ICON_SETTINGS_FILE_PATH,
     defaults = Runtime.DeepCopy(ICON_DEFAULTS),
     read_mode = "serialized_then_flat",
     write_mode = "serialized_then_flat",
@@ -320,6 +424,8 @@ function Shared.GetStore()
 end
 
 function Shared.LoadSettings()
+    migrateLegacyData()
+
     local settings = store:Load()
     Shared.state.settings = settings
 

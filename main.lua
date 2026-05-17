@@ -7,7 +7,7 @@ local Log = Core.Log
 local Require = Core.Require
 local Scheduler = Core.Scheduler
 
-local bootstrapLogger = Log.Create("Gharka Bars")
+local bootstrapLogger = Log.Create("Nuzi Nameplates")
 local moduleErrors = {}
 
 local function appendModuleErrors(name, errors)
@@ -22,7 +22,7 @@ local function appendModuleErrors(name, errors)
     )
 end
 
-local modules, failures = Require.AddonSet("gharka-bars", {
+local modules, failures = Require.AddonSet("nuzi-nameplates", {
     "shared",
     "bars",
     "settings_ui",
@@ -39,10 +39,10 @@ local SettingsUi = modules.settings_ui
 local Compat = modules.compat
 
 local addon = {
-    name = "Gharka Bars",
+    name = "Nuzi Nameplates",
     author = "Nuzi",
-    version = "1.5.73",
-    desc = "Overhead raid bars"
+    version = "1.6.0",
+    desc = "Overhead raid nameplates"
 }
 
 local logger = Log.Create(addon.name)
@@ -223,8 +223,11 @@ local function buildCommandRouter()
         get_player_name = getPlayerName,
         local_only = true
     })
-    router:Add("!gb", onCommand)
-    router:AddAlias("!gharkabars", "!gb")
+    router:Add("!np", onCommand)
+    router:AddAlias("!nameplates", "!np")
+    router:AddAlias("!nuzinameplates", "!np")
+    router:AddAlias("!gb", "!np")
+    router:AddAlias("!gharkabars", "!np")
     return router
 end
 
@@ -305,7 +308,7 @@ local function onLoad()
     events:OnSafe("UI_RELOADED", "UI_RELOADED", onUiReloaded)
     events:OnSafe("CHAT_MESSAGE", "CHAT_MESSAGE", onChatMessage)
     events:OnSafe("TEAM_MEMBERS_CHANGED", "TEAM_MEMBERS_CHANGED", onTeamChanged)
-    logger:Info("Loaded v" .. tostring(addon.version) .. ". Use the GB button for settings.")
+    logger:Info("Loaded v" .. tostring(addon.version) .. ". Use the NP button for settings.")
 end
 
 local function onUnload()

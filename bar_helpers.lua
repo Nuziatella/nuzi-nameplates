@@ -1,10 +1,10 @@
 local Shared = nil
 do
-    local ok, mod = pcall(require, "gharka-bars/shared")
+    local ok, mod = pcall(require, "nuzi-nameplates/shared")
     if ok then
         Shared = mod
     else
-        ok, mod = pcall(require, "gharka-bars.shared")
+        ok, mod = pcall(require, "nuzi-nameplates.shared")
         if ok then
             Shared = mod
         end
@@ -23,12 +23,12 @@ local function ensureCache(widget)
     end
     local cache = nil
     pcall(function()
-        cache = widget.__ghb_cache
+        cache = widget.__nnp_cache
     end)
     if type(cache) ~= "table" then
         cache = {}
         pcall(function()
-            widget.__ghb_cache = cache
+            widget.__nnp_cache = cache
         end)
     end
     return cache

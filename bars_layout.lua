@@ -1,9 +1,9 @@
 local function loadModule(name)
-    local ok, mod = pcall(require, "gharka-bars/" .. name)
+    local ok, mod = pcall(require, "nuzi-nameplates/" .. name)
     if ok then
         return mod
     end
-    ok, mod = pcall(require, "gharka-bars." .. name)
+    ok, mod = pcall(require, "nuzi-nameplates." .. name)
     if ok then
         return mod
     end

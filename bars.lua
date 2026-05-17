@@ -1,11 +1,11 @@
 local api = require("api")
 
 local function loadModule(name)
-    local ok, mod = pcall(require, "gharka-bars/" .. name)
+    local ok, mod = pcall(require, "nuzi-nameplates/" .. name)
     if ok then
         return mod
     end
-    ok, mod = pcall(require, "gharka-bars." .. name)
+    ok, mod = pcall(require, "nuzi-nameplates." .. name)
     if ok then
         return mod
     end
@@ -263,7 +263,7 @@ local function setCcTimerStyle(label, fontSize)
     end
     local wantFont = tonumber(fontSize) or 11
     local wantKey = tostring(wantFont)
-    if label.__ghb_cc_timer_style == wantKey then
+    if label.__nnp_cc_timer_style == wantKey then
         return
     end
     pcall(function()
@@ -272,7 +272,7 @@ local function setCcTimerStyle(label, fontSize)
             label.style:SetFontSize(wantFont)
         end
     end)
-    label.__ghb_cc_timer_style = wantKey
+    label.__nnp_cc_timer_style = wantKey
 end
 
 local function hideCcWidgets(frame)
@@ -389,11 +389,11 @@ local function setHoverHighlight(frame, enabled)
     if frame == nil then
         return
     end
-    local visible = enabled == true and frame.__ghb_click_target == true
-    if frame.__ghb_hover_visible == visible then
+    local visible = enabled == true and frame.__nnp_click_target == true
+    if frame.__nnp_hover_visible == visible then
         return
     end
-    frame.__ghb_hover_visible = visible
+    frame.__nnp_hover_visible = visible
     if frame.cache ~= nil then
         frame.cache.hp_bar_color_key = nil
         if frame.hpBar ~= nil and frame.hpBar.statusBar ~= nil and frame.cache.hp_bar_rgba ~= nil then
@@ -411,7 +411,7 @@ local function setEventWindowInteraction(frame, enabled)
         return
     end
     local interactive = enabled and true or false
-    frame.__ghb_click_target = interactive
+    frame.__nnp_click_target = interactive
     if frame.eventWindow == nil then
         return
     end
@@ -599,12 +599,26 @@ local function normalizeUnitId(unitId)
     return nil
 end
 
+local function unitHasLiveScreenPosition(unit)
+    if unit == "player" then
+        return true
+    end
+    if api == nil or api.Unit == nil or api.Unit.GetUnitScreenPosition == nil then
+        return true
+    end
+    local screenX, screenY = api.Unit:GetUnitScreenPosition(unit)
+    return screenX ~= nil and screenY ~= nil
+end
+
 local function queryUnitId(unit)
     if api == nil or api.Unit == nil or api.Unit.GetUnitId == nil then
         return nil
     end
     unit = normalizeUnitToken(unit)
     if unit == nil then
+        return nil
+    end
+    if not unitHasLiveScreenPosition(unit) then
         return nil
     end
     local unitId = api.Unit:GetUnitId(unit)
@@ -718,34 +732,12 @@ local function targetViaUnitApi(value)
     return true
 end
 
-local function getGuildNameFromInfo(info)
-    if type(info) ~= "table" then
-        return ""
-    end
-    return tostring(info.expeditionName or info.guildName or info.guild or "")
-end
-
-local function getUnitInfo(unit, unitId)
+local function getUnitInfo(unitId)
     local normalizedId = normalizeUnitId(unitId)
-    local normalizedUnit = normalizeUnitToken(unit)
-    local liveInfo = nil
-    if normalizedUnit ~= nil and api.Unit.UnitInfo ~= nil then
-        liveInfo = api.Unit:UnitInfo(normalizedUnit)
+    if normalizedId == nil or api.Unit == nil or api.Unit.GetUnitInfoById == nil then
+        return nil
     end
-    local info = nil
-    if normalizedId ~= nil and (type(liveInfo) ~= "table" or getGuildNameFromInfo(liveInfo) == "") then
-        info = api.Unit:GetUnitInfoById(normalizedId)
-    end
-    if type(liveInfo) == "table" then
-        if type(info) == "table" then
-            for key, value in pairs(info) do
-                if liveInfo[key] == nil then
-                    liveInfo[key] = value
-                end
-            end
-        end
-        return liveInfo
-    end
+    local info = api.Unit:GetUnitInfoById(normalizedId)
     if type(info) ~= "table" then
         return nil
     end
@@ -789,7 +781,7 @@ local function getCachedUnitStatic(frame, unit, unitId, includeRole, nowMs)
         return cached
     end
 
-    local info = getUnitInfo(unit, unitId)
+    local info = getUnitInfo(unitId)
     local role = type(cached) == "table" and cached.role or nil
     local roleDescriptor = type(cached) == "table" and cached.role_descriptor or nil
     local rolePending = false
@@ -1045,7 +1037,7 @@ setBorderVisible = function(border, enabled, rgba255)
         tostring(color[4] or "")
     }, ",")
     local wantVisible = enabled and true or false
-    if border.__ghb_visible == wantVisible and border.__ghb_color_key == colorKey then
+    if border.__nnp_visible == wantVisible and border.__nnp_color_key == colorKey then
         return
     end
     for _, drawable in pairs(border.parts) do
@@ -1062,8 +1054,8 @@ setBorderVisible = function(border, enabled, rgba255)
             end)
         end
     end
-    border.__ghb_visible = wantVisible
-    border.__ghb_color_key = colorKey
+    border.__nnp_visible = wantVisible
+    border.__nnp_color_key = colorKey
 end
 
 local function anchorBorderToWidget(border, widget)
@@ -1212,7 +1204,7 @@ local function ensureRootWindow()
     if Bars.root_window ~= nil then
         return Bars.root_window
     end
-    local root = api.Interface:CreateEmptyWindow("gharkaBarsRoot")
+    local root = api.Interface:CreateEmptyWindow("nuziNameplatesRoot")
     if root == nil then
         return nil
     end
@@ -1256,7 +1248,7 @@ local function createFrameContainer(frameId)
             frame = api.Interface:CreateWidget("emptywidget", frameId, root)
         end)
         if frame ~= nil then
-            frame.__ghb_top_level = false
+            frame.__nnp_top_level = false
             Helpers.SafeClickable(frame, false)
             Helpers.SafeShow(frame, false)
             return frame
@@ -1264,7 +1256,7 @@ local function createFrameContainer(frameId)
     end
     local frame = api.Interface:CreateEmptyWindow(frameId)
     if frame ~= nil then
-        frame.__ghb_top_level = true
+        frame.__nnp_top_level = true
         pcall(function()
             if frame.SetUILayer ~= nil and Bars.layer_mode ~= nil and Bars.layer_mode ~= "default" then
                 frame:SetUILayer(Bars.layer_mode)
@@ -1280,7 +1272,7 @@ local function ensureFrame(unit)
     if Bars.frames[unit] ~= nil then
         return Bars.frames[unit]
     end
-    local frameId = "gharkaBars_" .. tostring(unit)
+    local frameId = "nuziNameplates_" .. tostring(unit)
     local frame = createFrameContainer(frameId)
     if frame == nil then
         return nil
@@ -1373,11 +1365,11 @@ local function ensureFrame(unit)
     setWidgetPickable(eventWindow, false)
     registerEventWindowClicks(eventWindow)
     local function onHoverEnter()
-        Bars.hovered_unit = frame.__ghb_unit or unit
+        Bars.hovered_unit = frame.__nnp_unit or unit
         setHoverHighlight(frame, true)
     end
     local function onHoverLeave()
-        if Bars.hovered_unit == (frame.__ghb_unit or unit) then
+        if Bars.hovered_unit == (frame.__nnp_unit or unit) then
             Bars.hovered_unit = nil
         end
         setHoverHighlight(frame, false)
@@ -1389,17 +1381,17 @@ local function ensureFrame(unit)
             if button == "RightButton" or button == "MiddleButton" then
                 return
             end
-            if frame.__ghb_click_target ~= true then
+            if frame.__nnp_click_target ~= true then
                 return
             end
-            local clickUnit = frame.__ghb_unit or unit
+            local clickUnit = frame.__nnp_unit or unit
             changeTarget(clickUnit)
         end)
     end
     frame.eventWindow = eventWindow
-    frame.__ghb_unit = unit
-    frame.__ghb_unit_id = nil
-    frame.__ghb_click_target = false
+    frame.__nnp_unit = unit
+    frame.__nnp_unit_id = nil
+    frame.__nnp_click_target = false
     frame.cache = {}
     setEventWindowInteraction(frame, false)
     hideCcWidgets(frame)
@@ -1430,13 +1422,13 @@ local function applyLayerToWidget(widget)
     if mode == "default" then
         return
     end
-    if widget.__ghb_ui_layer == mode then
+    if widget.__nnp_ui_layer == mode then
         return
     end
     pcall(function()
         widget:SetUILayer(mode)
     end)
-    widget.__ghb_ui_layer = mode
+    widget.__nnp_ui_layer = mode
 end
 
 applyLayerToFrame = function(frame)
@@ -1691,7 +1683,7 @@ local function updateHpBarColor(frame, unit, unitId, cfg, info, currentValue, ma
     local relation, rgba, textColor = getHpBarAppearance(frame, unit, unitId, cfg, info, currentValue, maxValue, nowMs)
     frame.cache.hp_bar_rgba = rgba
     local displayRgba = rgba
-    if frame.__ghb_hover_visible == true and frame.__ghb_click_target == true then
+    if frame.__nnp_hover_visible == true and frame.__nnp_click_target == true then
         displayRgba = blendHoverTintColor(rgba)
     end
     local key = table.concat({
@@ -1793,7 +1785,7 @@ end
 
 local function showFrame(frame, nowMs)
     fadeFrame(frame, 1, nowMs)
-    if frame ~= nil and frame.__ghb_click_target == true then
+    if frame ~= nil and frame.__nnp_click_target == true then
         raiseWidget(frame.eventWindow)
     end
 end
@@ -1829,6 +1821,9 @@ local function getScreenPosition(frame, unit, settings)
     local preferredMethod = cache ~= nil and tostring(cache.position_method or "") or ""
     local function tryNametag()
         if not settings.anchor_to_nametag or api.Unit.GetUnitScreenNameTagOffset == nil then
+            return nil, nil, nil
+        end
+        if not unitHasLiveScreenPosition(unit) then
             return nil, nil, nil
         end
         return api.Unit:GetUnitScreenNameTagOffset(unit)
@@ -2012,7 +2007,7 @@ local function getClusterPriority(entry, targetUnitId, hoveredUnit)
     if hoveredUnit ~= nil and unit == hoveredUnit then
         score = score + 1000
     end
-    if targetUnitId ~= nil and tostring(frame.__ghb_unit_id or "") == tostring(targetUnitId) then
+    if targetUnitId ~= nil and tostring(frame.__nnp_unit_id or "") == tostring(targetUnitId) then
         score = score + 900
     end
     if unit == "target" then
@@ -2237,8 +2232,8 @@ local function updateOne(unit, context)
     frame.cache.hp = hp
     frame.cache.hp_max = hpMax
     frame.cache.hp_pct = (hpMax ~= nil and hpMax > 0) and math.max(0, math.min(1, hp / hpMax)) or 1
-    frame.__ghb_unit = unit
-    frame.__ghb_unit_id = unitId
+    frame.__nnp_unit = unit
+    frame.__nnp_unit_id = unitId
     Helpers.SafeShow(frame.nameLabel, cfg.show_name ~= false)
     Helpers.SafeShow(frame.guildLabel, cfg.show_guild and guildText ~= "")
     Helpers.SafeShow(frame.roleLabel, false)
@@ -2452,7 +2447,7 @@ local function updatePositionsForUnits(unitKeys, settings, cfg, positionSources,
                         screen_y = tonumber(screenY) or 0,
                         raw_x = tonumber(screenX) or 0,
                         raw_y = tonumber(screenY) or 0,
-                        is_current_target = tostring(frame.__ghb_unit_id or "") == tostring(targetUnitId or ""),
+                        is_current_target = tostring(frame.__nnp_unit_id or "") == tostring(targetUnitId or ""),
                         width = tonumber(frame.cache.frame_width) or clamp(cfg.width, 80, 320, 156),
                         height = tonumber(frame.cache.frame_height) or 48,
                         now_ms = nowMs
@@ -2696,7 +2691,7 @@ end
 function Bars.Unload()
     for _, frame in pairs(Bars.frames) do
         Helpers.SafeShow(frame, false)
-        if frame ~= nil and frame.__ghb_top_level == true and api.Interface ~= nil and api.Interface.Free ~= nil then
+        if frame ~= nil and frame.__nnp_top_level == true and api.Interface ~= nil and api.Interface.Free ~= nil then
             pcall(function()
                 api.Interface:Free(frame)
             end)

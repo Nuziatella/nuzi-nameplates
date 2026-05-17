@@ -1,12 +1,12 @@
-# Gharka Bars
+# Nuzi Nameplates
 
-![Gharka Bars](icon.png)
+![Nuzi Nameplates](icon.png)
 
 Because stock nameplates are fine right up until the raid starts moving.
 
-`Gharka Bars` keeps the important information where you can actually use it:
+`Nuzi Nameplates` keeps the important information where you can actually use it:
 
-- replaces stock overhead clutter with cleaner HP and MP bars
+- replaces stock overhead clutter with cleaner HP and MP nameplates
 - supports `player`, `target`, `watchtarget`, `targettarget`, `mount/pet`, and raid members
 - shows role icons, distance text, target highlighting, and CC timers
 - includes a movable launcher icon and in-game settings window
@@ -18,11 +18,11 @@ Because stock nameplates are fine right up until the raid starts moving.
 2. Make sure the addon is enabled in game.
 3. Click the launcher icon to open or close settings.
 
-Saved data lives in `gharka-bars/.data` so settings, profiles, backups, and launcher position survive updates.
+Saved data lives in `nuzi-nameplates/.data` so settings, profiles, backups, and launcher position survive updates.
 
 ## Quick Start
 
-1. Click the launcher icon to open `Gharka Bars`.
+1. Click the launcher icon to open `Nuzi Nameplates`.
 2. Use `General`, `Layout`, `Text`, `CC`, and `Colors` to tune the bars.
 3. Pick a preset if you want a quick baseline before fine-tuning.
 4. Save a named profile or backup once the layout feels right.
@@ -74,4 +74,4 @@ You can:
 - The launcher icon has its own saved position file so profile swaps do not reset it.
 - AAClassic does not expose addon targeting for `target`, `watchtarget`, or `targettarget`; `watchtarget` and `targettarget` bars are click-through so the stock/game target behind them can receive the click.
 
-1.5.73
+1.6.0
