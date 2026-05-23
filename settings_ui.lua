@@ -31,7 +31,7 @@ local SettingsUi = {
     actions = nil,
     dragging = false,
     active_page = "general",
-    page_widgets = { general = {}, layout = {}, text = {}, cc = {}, colors = {} },
+    page_widgets = { general = {}, units = {}, layout = {}, text = {}, positions = {}, cc = {}, colors = {}, advanced = {} },
     color_page = 1,
     color_page_count = 1,
     color_group_widgets = {},
@@ -60,19 +60,31 @@ local PAGE_DEFS = {
         key = "general",
         label = "General",
         title = "General",
-        summary = "Profiles, presets, launcher settings, and live runtime status."
+        summary = "Core enable state and layout presets."
+    },
+    {
+        key = "units",
+        label = "Units",
+        title = "Units",
+        summary = "Which unit nameplates are shown and how they respond to clicks."
     },
     {
         key = "layout",
-        label = "Layout",
-        title = "Layout",
-        summary = "Visibility, layout modes, and overall frame sizing."
+        label = "Frame",
+        title = "Frame",
+        summary = "Nameplate pieces, layout modes, and overall sizing."
     },
     {
         key = "text",
         label = "Text",
         title = "Text",
-        summary = "Font sizing, clipping, and value offset tuning."
+        summary = "Font sizing, clipping, and value text settings."
+    },
+    {
+        key = "positions",
+        label = "Positions",
+        title = "Positions",
+        summary = "Frame, label, role, value, and distance offsets."
     },
     {
         key = "cc",
@@ -85,6 +97,12 @@ local PAGE_DEFS = {
         label = "Colors",
         title = "Colors",
         summary = "Per-element palette tuning for bars, text, and state colors."
+    },
+    {
+        key = "advanced",
+        label = "Advanced",
+        title = "Advanced",
+        summary = "Draw layer, name-tag anchoring, launcher size, and runtime status."
     }
 }
 
@@ -1714,6 +1732,12 @@ local function refreshControls()
             ctrl:SetChecked(style[item.key] and true or false)
         end
     end
+    for _, item in ipairs(Schema.ALERT_TOGGLES or {}) do
+        local ctrl = SettingsUi.controls["alert_toggle_" .. item.key]
+        if ctrl ~= nil and ctrl.SetChecked ~= nil then
+            ctrl:SetChecked(style[item.key] and true or false)
+        end
+    end
     for _, item in ipairs(Schema.CC_CHOICES or {}) do
         local ctrl = SettingsUi.controls["cc_choice_" .. item.key]
         if ctrl ~= nil and ctrl.SetText ~= nil then
@@ -1721,6 +1745,7 @@ local function refreshControls()
         end
     end
     refreshSliderValues("cc_slider_", Schema.CC_SLIDERS, style)
+    refreshSliderValues("alert_slider_", Schema.ALERT_SLIDERS, style)
     for _, item in ipairs(Schema.STYLE_CHOICES) do
         local ctrl = SettingsUi.controls["style_choice_" .. item.key]
         if ctrl ~= nil and ctrl.SetText ~= nil then
@@ -1931,7 +1956,7 @@ local function ensureWindow()
 
     local navParent = navPanel or wnd
     local contentParent = contentPanel or wnd
-    createLabel("nnpNavTitle", navParent, "Nuzi Nameplates", 14, 12, 18, 132)
+    createLabel("nnpNavTitle", navParent, "Nameplates", 14, 12, 18, 132)
     createLabel("nnpNavSubtitle", navParent, "Overlay settings", 14, 36, 12, 132)
     createLabel("nnpNavSectionTitle", navParent, "Sections", 14, 74, 15, 132)
     createLabel(
@@ -1968,10 +1993,13 @@ local function ensureWindow()
 
     local ctx = buildContext()
     Pages.BuildGeneralPage(ctx, pageParents.general or contentParent)
+    Pages.BuildUnitsPage(ctx, pageParents.units or contentParent)
     Pages.BuildLayoutPage(ctx, pageParents.layout or contentParent)
     Pages.BuildTextPage(ctx, pageParents.text or contentParent)
+    Pages.BuildPositionsPage(ctx, pageParents.positions or contentParent)
     Pages.BuildCcPage(ctx, pageParents.cc or contentParent)
     Pages.BuildColorsPage(ctx, pageParents.colors or contentParent)
+    Pages.BuildAdvancedPage(ctx, pageParents.advanced or contentParent)
 
     local footerPanel = createEmptyChild("nnpFooterPanel", contentParent, 18, 776, 738, 70)
     if footerPanel ~= nil then
@@ -2178,7 +2206,7 @@ function SettingsUi.Unload()
     SettingsUi.controls = {}
     SettingsUi.dragging = false
     SettingsUi.active_page = "general"
-    SettingsUi.page_widgets = { general = {}, layout = {}, text = {}, cc = {}, colors = {} }
+    SettingsUi.page_widgets = { general = {}, units = {}, layout = {}, text = {}, positions = {}, cc = {}, colors = {}, advanced = {} }
     SettingsUi.color_page = 1
     SettingsUi.color_page_count = 1
     SettingsUi.color_group_widgets = {}

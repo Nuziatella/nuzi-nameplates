@@ -4,6 +4,18 @@ local Compat = {
     state = nil
 }
 
+local nuziCoreSliderFactory = nil
+
+local function hasNuziCoreSliderFactory()
+    if nuziCoreSliderFactory ~= nil then
+        return nuziCoreSliderFactory and true or false
+    end
+
+    local ok, factory = pcall(require, "nuzi-core/ui/slider")
+    nuziCoreSliderFactory = ok and type(factory) == "function"
+    return nuziCoreSliderFactory
+end
+
 local function hasFunction(tbl, key)
     return type(tbl) == "table" and type(tbl[key]) == "function"
 end
@@ -14,7 +26,7 @@ end
 
 local function buildRuntimeText(caps)
     local anchorText = caps.nametag_anchor and "Name tag" or (caps.screen_position and "Screen position" or "Unavailable")
-    local sliderText = caps.slider_factory and "Available" or "Unavailable"
+    local sliderText = caps.slider_factory and (caps.nuzi_core_slider and "Nuzi Core" or "Available") or "Unavailable"
     local barsText = caps.statusbar_factory and "Available" or "Unavailable"
     return {
         string.format("Render: %s", caps.render_supported and "Supported" or "Blocked"),
@@ -33,7 +45,8 @@ function Compat.Probe(force)
         create_empty_window = hasFunction(api.Interface, "CreateEmptyWindow"),
         create_widget = hasFunction(api.Interface, "CreateWidget"),
         apply_button_skin = hasFunction(api.Interface, "ApplyButtonSkin"),
-        slider_factory = type(api._Library) == "table"
+        nuzi_core_slider = hasNuziCoreSliderFactory(),
+        addon_library_slider = type(api._Library) == "table"
             and type(api._Library.UI) == "table"
             and type(api._Library.UI.CreateSlider) == "function",
         file_read = hasFunction(api.File, "Read"),
@@ -48,6 +61,7 @@ function Compat.Probe(force)
         chat_event = type(api.On) == "function",
         stock_target_frame = ADDON ~= nil and type(ADDON.GetContent) == "function" and UIC ~= nil and UIC.TARGET_UNITFRAME ~= nil
     }
+    caps.slider_factory = caps.nuzi_core_slider or caps.addon_library_slider
 
     local blockers = {}
     local warnings = {}

@@ -136,6 +136,15 @@ Schema.CC_SLIDERS = {
     { key = "cc_offset_y", label = "Offset Y", min = -80, max = 80, factor = 1 }
 }
 
+Schema.ALERT_TOGGLES = {
+    { key = "low_health_flash", label = "Critical HP border" },
+    { key = "cc_flash", label = "CC border" }
+}
+
+Schema.ALERT_SLIDERS = {
+    { key = "low_health_flash_threshold_pct", label = "Critical HP", min = 1, max = 99, factor = 1 }
+}
+
 Schema.COLOR_GROUPS = {
     { key = "hp_bar_color", label = "HP bar", description = "Friendly team HP fill.", preview = "bar" },
     { key = "hostile_bar_color", label = "Hostile HP", description = "Enemy target HP fill.", preview = "bar" },

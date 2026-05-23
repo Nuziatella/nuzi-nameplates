@@ -98,6 +98,12 @@ local VISIBLE_BULK_POSITION_INTERVAL_MEDIUM_MS = 33
 local VISIBLE_BULK_POSITION_INTERVAL_LARGE_MS = 33
 local VISIBLE_BULK_POSITION_INTERVAL_XL_MS = 33
 local HOVER_CLUSTER_DIM_ALPHA = 0.42
+local CRITICAL_FLASH_PERIOD_MS = 560
+local CRITICAL_FLASH_MIN_ALPHA = 0.25
+local CC_FLASH_PERIOD_MS = 760
+local CC_FLASH_MIN_ALPHA = 0.30
+local CRITICAL_FLASH_BORDER_COLOR = { 255, 0, 0, 255 }
+local CC_FLASH_BORDER_COLOR = { 180, 72, 255, 255 }
 local CC_CATEGORY_STYLE_KEYS = {
     hard = "show_cc_hard",
     silence = "show_cc_silence",
@@ -121,6 +127,41 @@ local function safeUiNowMs()
     end
     local value = api.Time:GetUiMsec()
     return tonumber(value) or 0
+end
+
+local function getUiScale()
+    if api.Interface == nil or api.Interface.GetUIScale == nil then
+        return 1
+    end
+    local scale = tonumber(api.Interface:GetUIScale()) or 1
+    if scale > 10 then
+        scale = scale / 100
+    end
+    if scale <= 0 then
+        return 1
+    end
+    return scale
+end
+
+local function screenPositionToUi(screenX, screenY, screenZ)
+    local x = tonumber(screenX)
+    local y = tonumber(screenY)
+    if x == nil or y == nil then
+        return nil, nil, screenZ
+    end
+    if F_LAYOUT ~= nil and type(F_LAYOUT.CalcDontApplyUIScale) == "function" then
+        local uiX = nil
+        local uiY = nil
+        local ok = pcall(function()
+            uiX = F_LAYOUT.CalcDontApplyUIScale(x)
+            uiY = F_LAYOUT.CalcDontApplyUIScale(y)
+        end)
+        if ok and tonumber(uiX) ~= nil and tonumber(uiY) ~= nil then
+            return tonumber(uiX), tonumber(uiY), screenZ
+        end
+    end
+    local scale = getUiScale()
+    return x / scale, y / scale, screenZ
 end
 
 local function setWidgetPickable(widget, enabled)
@@ -707,6 +748,69 @@ local function rebuildOwnerAndPositionMaps(nowMs)
     Bars.owner_source_last_build_ms = tonumber(nowMs) or 0
 end
 
+local function pulseAlpha(nowMs, periodMs, minAlpha)
+    local now = tonumber(nowMs) or 0
+    local period = tonumber(periodMs) or 1
+    if period <= 0 then
+        return 1
+    end
+    local phase = (now % period) / period
+    local wave = phase < 0.5 and (phase * 2) or ((1 - phase) * 2)
+    return clamp(minAlpha + (wave * (1 - minAlpha)), 0, 1, 1)
+end
+
+local function pulsedBorderColor(rgba255, alphaMult)
+    local alpha = clamp(alphaMult, 0, 1, 1)
+    local color = type(rgba255) == "table" and rgba255 or { 255, 255, 255, 255 }
+    return {
+        tonumber(color[1]) or 255,
+        tonumber(color[2]) or 255,
+        tonumber(color[3]) or 255,
+        math.floor((tonumber(color[4]) or 255) * alpha + 0.5)
+    }
+end
+
+local function setPulsingBorder(border, active, rgba255, periodMs, minAlpha, nowMs)
+    if type(border) ~= "table" then
+        return
+    end
+    if active ~= true then
+        setBorderVisible(border, false, rgba255)
+        return
+    end
+    local pulse = pulseAlpha(nowMs, periodMs, minAlpha)
+    setBorderVisible(border, true, pulsedBorderColor(rgba255, pulse))
+end
+
+local function updateFrameAlertBorders(frame)
+    if frame == nil or frame.cache == nil then
+        return
+    end
+    local cache = frame.cache
+    if cache.shown ~= true then
+        setBorderVisible(frame.criticalFlashBorder, false, CRITICAL_FLASH_BORDER_COLOR)
+        setBorderVisible(frame.ccFlashBorder, false, CC_FLASH_BORDER_COLOR)
+        return
+    end
+    local nowMs = safeUiNowMs()
+    setPulsingBorder(
+        frame.criticalFlashBorder,
+        cache.critical_flash_active == true,
+        CRITICAL_FLASH_BORDER_COLOR,
+        CRITICAL_FLASH_PERIOD_MS,
+        CRITICAL_FLASH_MIN_ALPHA,
+        nowMs
+    )
+    setPulsingBorder(
+        frame.ccFlashBorder,
+        cache.cc_flash_active == true,
+        CC_FLASH_BORDER_COLOR,
+        CC_FLASH_PERIOD_MS,
+        CC_FLASH_MIN_ALPHA,
+        nowMs
+    )
+end
+
 local function applyFrameCompositeAlpha(frame)
     if frame == nil or frame.cache == nil then
         return
@@ -719,6 +823,7 @@ local function applyFrameCompositeAlpha(frame)
     local baseAlpha = tonumber(cache.base_alpha) or 1
     local hoverAlpha = tonumber(cache.hover_alpha_mult) or 1
     Helpers.SafeSetAlpha(frame, fadeAlpha * baseAlpha * hoverAlpha)
+    updateFrameAlertBorders(frame)
 end
 
 local function targetViaUnitApi(value)
@@ -1058,11 +1163,12 @@ setBorderVisible = function(border, enabled, rgba255)
     border.__nnp_color_key = colorKey
 end
 
-local function anchorBorderToWidget(border, widget)
+local function anchorBorderToWidget(border, widget, inset, thickness)
     if type(border) ~= "table" or type(border.parts) ~= "table" or widget == nil then
         return
     end
-    local thickness = 2
+    local borderInset = tonumber(inset) or 2
+    local borderThickness = tonumber(thickness) or 2
     pcall(function()
         local top = border.parts.top
         local bottom = border.parts.bottom
@@ -1070,34 +1176,34 @@ local function anchorBorderToWidget(border, widget)
         local right = border.parts.right
         if top ~= nil then
             top:RemoveAllAnchors()
-            top:AddAnchor("TOPLEFT", widget, -2, -2)
-            top:AddAnchor("TOPRIGHT", widget, 2, -2)
+            top:AddAnchor("TOPLEFT", widget, -borderInset, -borderInset)
+            top:AddAnchor("TOPRIGHT", widget, borderInset, -borderInset)
             if top.SetHeight ~= nil then
-                top:SetHeight(thickness)
+                top:SetHeight(borderThickness)
             end
         end
         if bottom ~= nil then
             bottom:RemoveAllAnchors()
-            bottom:AddAnchor("BOTTOMLEFT", widget, -2, 2)
-            bottom:AddAnchor("BOTTOMRIGHT", widget, 2, 2)
+            bottom:AddAnchor("BOTTOMLEFT", widget, -borderInset, borderInset)
+            bottom:AddAnchor("BOTTOMRIGHT", widget, borderInset, borderInset)
             if bottom.SetHeight ~= nil then
-                bottom:SetHeight(thickness)
+                bottom:SetHeight(borderThickness)
             end
         end
         if left ~= nil then
             left:RemoveAllAnchors()
-            left:AddAnchor("TOPLEFT", widget, -2, -2)
-            left:AddAnchor("BOTTOMLEFT", widget, -2, 2)
+            left:AddAnchor("TOPLEFT", widget, -borderInset, -borderInset)
+            left:AddAnchor("BOTTOMLEFT", widget, -borderInset, borderInset)
             if left.SetWidth ~= nil then
-                left:SetWidth(thickness)
+                left:SetWidth(borderThickness)
             end
         end
         if right ~= nil then
             right:RemoveAllAnchors()
-            right:AddAnchor("TOPRIGHT", widget, 2, -2)
-            right:AddAnchor("BOTTOMRIGHT", widget, 2, 2)
+            right:AddAnchor("TOPRIGHT", widget, borderInset, -borderInset)
+            right:AddAnchor("BOTTOMRIGHT", widget, borderInset, borderInset)
             if right.SetWidth ~= nil then
-                right:SetWidth(thickness)
+                right:SetWidth(borderThickness)
             end
         end
     end)
@@ -1327,6 +1433,20 @@ local function ensureFrame(unit)
     end)
     frame.hpBar = hpBar
     frame.mpBar = mpBar
+    local criticalFlashBorder = nil
+    local ccFlashBorder = nil
+    pcall(function()
+        criticalFlashBorder = makeBorderSet(frame, CRITICAL_FLASH_BORDER_COLOR)
+        ccFlashBorder = makeBorderSet(frame, CC_FLASH_BORDER_COLOR)
+        if hpBar ~= nil then
+            anchorBorderToWidget(criticalFlashBorder, hpBar, 4, 2)
+            anchorBorderToWidget(ccFlashBorder, hpBar, 1, 2)
+        end
+        setBorderVisible(criticalFlashBorder, false, CRITICAL_FLASH_BORDER_COLOR)
+        setBorderVisible(ccFlashBorder, false, CC_FLASH_BORDER_COLOR)
+    end)
+    frame.criticalFlashBorder = criticalFlashBorder
+    frame.ccFlashBorder = ccFlashBorder
     local function makeLabel(suffix)
         local label = api.Interface:CreateWidget("label", frameId .. "." .. suffix, frame)
         setWidgetPickable(label, false)
@@ -1719,11 +1839,16 @@ local function hideFrame(frame)
         frame.cache.display_enabled = false
         frame.cache.data_active = false
         frame.cache.shown = false
+        frame.cache.critical_flash_active = false
+        frame.cache.cc_flash_active = false
+        frame.cache.cc_visual_count = 0
     end
     Role.Hide(frame)
     setHoverHighlight(frame, false)
     setBorderVisible(frame.targetGlow, false, TARGET_GLOW_COLOR)
     setBorderVisible(frame.targetTint, false, TARGET_TINT_COLOR)
+    setBorderVisible(frame.criticalFlashBorder, false, CRITICAL_FLASH_BORDER_COLOR)
+    setBorderVisible(frame.ccFlashBorder, false, CC_FLASH_BORDER_COLOR)
     hideCcWidgets(frame)
     Helpers.SafeShow(frame, false)
 end
@@ -1776,6 +1901,8 @@ local function fadeFrame(frame, targetAlpha, nowMs)
             setHoverHighlight(frame, false)
             setBorderVisible(frame.targetGlow, false, TARGET_GLOW_COLOR)
             setBorderVisible(frame.targetTint, false, TARGET_TINT_COLOR)
+            setBorderVisible(frame.criticalFlashBorder, false, CRITICAL_FLASH_BORDER_COLOR)
+            setBorderVisible(frame.ccFlashBorder, false, CC_FLASH_BORDER_COLOR)
             hideCcWidgets(frame)
             setEventWindowInteraction(frame, false)
             Helpers.SafeShow(frame, false)
@@ -1849,6 +1976,9 @@ local function getScreenPosition(frame, unit, settings)
             screenX, screenY, screenZ = tryNametag()
         else
             screenX, screenY, screenZ = tryScreen()
+        end
+        if screenX ~= nil and screenY ~= nil then
+            screenX, screenY, screenZ = screenPositionToUi(screenX, screenY, screenZ)
         end
         if screenX ~= nil and screenY ~= nil then
             if cache ~= nil then
@@ -1997,17 +2127,41 @@ local function getFrameHpPct(frame)
     if frame == nil or frame.cache == nil then
         return 1
     end
-    return tonumber(frame.cache.hp_pct) or 1
+    return clamp(frame.cache.hp_pct, 0, 1, 1)
 end
 
-local function getClusterPriority(entry, targetUnitId, hoveredUnit)
+local function compareHealthPriority(a, b, highFirst)
+    local aHp = getFrameHpPct(a.frame)
+    local bHp = getFrameHpPct(b.frame)
+    local aWounded = aHp < 0.999
+    local bWounded = bHp < 0.999
+    if aWounded ~= bWounded then
+        if highFirst then
+            return aWounded
+        end
+        return bWounded
+    end
+    if aWounded and bWounded and aHp ~= bHp then
+        if highFirst then
+            return aHp < bHp
+        end
+        return aHp > bHp
+    end
+    return nil
+end
+
+local function getVisualPriorityScore(entry, targetUnitId, hoveredUnit)
     local frame = entry.frame
     local unit = tostring(entry.unit or "")
     local score = 0
+    local hpPct = getFrameHpPct(frame)
+    if hpPct < 0.999 then
+        score = score + 100000 + math.floor((1 - hpPct) * 100000)
+    end
     if hoveredUnit ~= nil and unit == hoveredUnit then
         score = score + 1000
     end
-    if targetUnitId ~= nil and tostring(frame.__nnp_unit_id or "") == tostring(targetUnitId) then
+    if frame ~= nil and targetUnitId ~= nil and tostring(frame.__nnp_unit_id or "") == tostring(targetUnitId) then
         score = score + 900
     end
     if unit == "target" then
@@ -2017,15 +2171,21 @@ local function getClusterPriority(entry, targetUnitId, hoveredUnit)
     elseif unit == "player" then
         score = score + 650
     end
-    local hpPct = getFrameHpPct(frame)
-    score = score + math.floor((1 - hpPct) * 300)
-    local ccCount = type(frame.cache.cc_effects) == "table" and #frame.cache.cc_effects or 0
+    local ccCount = tonumber(frame ~= nil and frame.cache ~= nil and frame.cache.cc_visual_count or nil) or 0
     score = score + math.min(120, ccCount * 25)
     return score
 end
 
+local function getClusterPriority(entry, targetUnitId, hoveredUnit)
+    return getVisualPriorityScore(entry, targetUnitId, hoveredUnit)
+end
+
 local function sortClusterEntries(entries, targetUnitId, hoveredUnit)
     table.sort(entries, function(a, b)
+        local healthOrder = compareHealthPriority(a, b, true)
+        if healthOrder ~= nil then
+            return healthOrder
+        end
         local aScore = getClusterPriority(a, targetUnitId, hoveredUnit)
         local bScore = getClusterPriority(b, targetUnitId, hoveredUnit)
         if aScore ~= bScore then
@@ -2043,6 +2203,41 @@ local function sortClusterEntries(entries, targetUnitId, hoveredUnit)
         end
         return tostring(a.unit or "") < tostring(b.unit or "")
     end)
+end
+
+local function raiseEntriesByVisualPriority(entries, targetUnitId, hoveredUnit)
+    if type(entries) ~= "table" or #entries == 0 then
+        return
+    end
+    local ordered = {}
+    for _, entry in ipairs(entries) do
+        if entry.frame ~= nil then
+            ordered[#ordered + 1] = entry
+        end
+    end
+    table.sort(ordered, function(a, b)
+        local healthOrder = compareHealthPriority(a, b, false)
+        if healthOrder ~= nil then
+            return healthOrder
+        end
+        local aScore = getVisualPriorityScore(a, targetUnitId, hoveredUnit)
+        local bScore = getVisualPriorityScore(b, targetUnitId, hoveredUnit)
+        if aScore ~= bScore then
+            return aScore < bScore
+        end
+        local aHp = getFrameHpPct(a.frame)
+        local bHp = getFrameHpPct(b.frame)
+        if aHp ~= bHp then
+            return aHp > bHp
+        end
+        return tostring(a.unit or "") > tostring(b.unit or "")
+    end)
+    for _, entry in ipairs(ordered) do
+        raiseWidget(entry.frame)
+        if entry.frame ~= nil and entry.frame.__nnp_click_target == true then
+            raiseWidget(entry.frame.eventWindow)
+        end
+    end
 end
 
 local function overlapsCluster(a, b, config)
@@ -2232,6 +2427,10 @@ local function updateOne(unit, context)
     frame.cache.hp = hp
     frame.cache.hp_max = hpMax
     frame.cache.hp_pct = (hpMax ~= nil and hpMax > 0) and math.max(0, math.min(1, hp / hpMax)) or 1
+    local criticalThreshold = clamp(cfg.low_health_flash_threshold_pct, 1, 99, 35) / 100
+    frame.cache.critical_flash_active = cfg.low_health_flash ~= false
+        and frame.cache.hp_pct < 0.999
+        and frame.cache.hp_pct <= criticalThreshold
     frame.__nnp_unit = unit
     frame.__nnp_unit_id = unitId
     Helpers.SafeShow(frame.nameLabel, cfg.show_name ~= false)
@@ -2258,10 +2457,15 @@ local function updateOne(unit, context)
         else
             ccEffects = getCachedCcEffects(frame, unit)
         end
+        local flashEffects = filterCcEffects(cfg, ccEffects)
+        frame.cache.cc_flash_active = cfg.cc_flash ~= false and type(flashEffects) == "table" and #flashEffects > 0
+        frame.cache.cc_visual_count = type(flashEffects) == "table" and #flashEffects or 0
         updateCcWidgets(frame, cfg, ccEffects, unit == "player" and forceShowPlayerCc)
     else
         frame.cache.cc_effects = {}
         frame.cache.cc_last_scan_ms = 0
+        frame.cache.cc_flash_active = false
+        frame.cache.cc_visual_count = 0
         hideCcWidgets(frame)
     end
 
@@ -2468,6 +2672,7 @@ local function updatePositionsForUnits(unitKeys, settings, cfg, positionSources,
             showFrame(frame, entry.now_ms)
             applyFrameCompositeAlpha(frame)
         end
+        raiseEntriesByVisualPriority(entries, targetUnitId, Bars.hovered_unit)
         return
     end
 
@@ -2475,6 +2680,7 @@ local function updatePositionsForUnits(unitKeys, settings, cfg, positionSources,
     for clusterIndex, cluster in ipairs(clusters) do
         applyClusterLayout(cluster, clusterConfig, targetUnitId, Bars.hovered_unit, tostring(clusterIndex))
     end
+    raiseEntriesByVisualPriority(entries, targetUnitId, Bars.hovered_unit)
 end
 
 local function shouldUseUnifiedClusterPass(cfg)

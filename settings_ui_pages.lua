@@ -104,6 +104,66 @@ local function createTightSlider(ctx, id, wnd, label, x, y, minValue, maxValue)
     })
 end
 
+local function findItemByKey(list, key)
+    for _, item in ipairs(list or {}) do
+        if item.key == key then
+            return item
+        end
+    end
+    return nil
+end
+
+local function addGlobalToggleControl(ctx, page, wnd, key, x, y, width)
+    local item = findItemByKey(ctx.Schema.GLOBAL_TOGGLES, key)
+    if item == nil then
+        return nil
+    end
+    local cb = ctx.createCheckbox("nnpGlobal" .. item.key, wnd, item.label, x, y, width or 220)
+    ctx.addPageWidget(page, cb.button)
+    ctx.addPageWidget(page, cb.label)
+    ctx.SettingsUi.controls["global_" .. item.key] = cb
+    bindGlobalToggle(ctx, item, cb)
+    return cb
+end
+
+local function addStyleToggleControl(ctx, page, wnd, item, x, y, width)
+    if item == nil then
+        return nil
+    end
+    local cb = ctx.createCheckbox("nnpStyleToggle" .. item.key, wnd, item.label, x, y, width or 220)
+    ctx.addPageWidget(page, cb.button)
+    ctx.addPageWidget(page, cb.label)
+    ctx.SettingsUi.controls["style_toggle_" .. item.key] = cb
+    bindStyleToggle(ctx, item, cb)
+    return cb
+end
+
+local function addStyleChoiceControl(ctx, page, wnd, item, x, y)
+    if item == nil then
+        return nil
+    end
+    local label, btn = ctx.createChoiceRow("nnpChoice" .. item.key, wnd, item.label, x, y, 170)
+    ctx.addPageWidget(page, label)
+    ctx.addPageWidget(page, btn)
+    ctx.SettingsUi.controls["style_choice_" .. item.key] = btn
+    bindStyleChoice(ctx, item, btn)
+    return btn
+end
+
+local function addStyleSliderControl(ctx, page, wnd, prefix, item, x, y)
+    if item == nil then
+        return nil
+    end
+    local label, slider, value = createTightSlider(ctx, prefix .. item.key, wnd, item.label, x, y, item.min, item.max)
+    ctx.addPageWidget(page, label)
+    ctx.addPageWidget(page, slider)
+    ctx.addPageWidget(page, value)
+    ctx.SettingsUi.controls["style_slider_" .. item.key] = slider
+    ctx.SettingsUi.controls["style_slider_val_" .. item.key] = value
+    bindStyleSlider(ctx, item, slider, value)
+    return slider
+end
+
 local function copyColor(style, key)
     local value = style[key]
     if type(value) ~= "table" then
@@ -146,56 +206,207 @@ local function applyPreset(ctx, preset)
 end
 
 function Pages.BuildGeneralPage(ctx, wnd)
-    ctx.addPageWidget("general", ctx.createLabel("nnpGeneralTitle", wnd, "General", 24, 98, 16, 220))
-    ctx.addPageWidget("general", ctx.createLabel("nnpGeneralHint", wnd, "Quick setup for presets, tracking, layer, and launcher size.", 24, 122, 12, 700))
-
-    addSection(ctx, "general", wnd, "nnpPreset", "Presets", nil, 24, 154, 700)
+    addSection(ctx, "general", wnd, "nnpPreset", "Presets", "Apply a starting layout without changing saved colors.", 24, 112, 700)
     local presetButtons = ctx.Schema.STYLE_PRESETS or {}
     for index, preset in ipairs(presetButtons) do
-        local col = (index - 1) % 2
-        local row = math.floor((index - 1) / 2)
-        local buttonX = 24 + (col * 188)
-        local buttonY = 186 + (row * 54)
-        local button = ctx.createButton("nnpPresetBtn" .. tostring(preset.key), wnd, tostring(preset.label or preset.key or "Preset"), buttonX, buttonY, 156, 30)
+        local buttonX = 24 + ((index - 1) * 172)
+        local button = ctx.createButton("nnpPresetBtn" .. tostring(preset.key), wnd, tostring(preset.label or preset.key or "Preset"), buttonX, 158, 146, 30)
         ctx.addPageWidget("general", button)
         button:SetHandler("OnClick", function()
             applyPreset(ctx, preset)
         end)
     end
-    ctx.addPageWidget("general", ctx.createLabel("nnpPresetLegend", wnd, "Raid balanced | Compact tight | Large bigger | Minimal low-noise", 24, 298, 12, 700))
 
-    addSection(ctx, "general", wnd, "nnpRuntime", "Runtime", nil, 24, 338, 320)
-    for index = 1, 3 do
-        local line = ctx.createLabel("nnpRuntimeLine" .. tostring(index), wnd, "", 24, 370 + ((index - 1) * 22), 12, 320)
-        ctx.addPageWidget("general", line)
-        ctx.SettingsUi.controls["runtime_line_" .. tostring(index)] = line
+    addSection(ctx, "general", wnd, "nnpCore", "Core", nil, 24, 234, 320)
+    addGlobalToggleControl(ctx, "general", wnd, "enabled", 24, 270, 260)
+
+    addSection(ctx, "general", wnd, "nnpGeneralProfiles", "Profiles", nil, 388, 234, 320)
+    ctx.addPageWidget("general", ctx.createLabel("nnpGeneralProfilesHint", wnd, "Save, load, and reset profiles from the footer.", 388, 270, 12, 320))
+end
+
+function Pages.BuildUnitsPage(ctx, wnd)
+    addSection(ctx, "units", wnd, "nnpUnitVisibility", "Unit Visibility", "Choose which unit bars are allowed to appear.", 24, 112, 700)
+
+    local unitKeys = {
+        "show_player",
+        "show_target",
+        "show_watchtarget",
+        "show_targettarget",
+        "show_raid_party",
+        "show_mount"
+    }
+    for index, key in ipairs(unitKeys) do
+        local colX = index <= 3 and 24 or 388
+        local row = index <= 3 and index or (index - 3)
+        addGlobalToggleControl(ctx, "units", wnd, key, colX, 162 + ((row - 1) * 34), 240)
     end
-    local runtimeWarn = ctx.createLabel("nnpRuntimeWarn", wnd, "", 24, 438, 12, 320)
-    ctx.addPageWidget("general", runtimeWarn)
-    ctx.SettingsUi.controls.runtime_warning = runtimeWarn
 
-    addSection(ctx, "general", wnd, "nnpTracking", "Tracking", nil, 392, 338, 320)
-    for index, item in ipairs(ctx.Schema.GLOBAL_TOGGLES or {}) do
-        local rowY = 370 + ((index - 1) * 28)
-        local cb = ctx.createCheckbox("nnpGlobal" .. item.key, wnd, item.label, 392, rowY, 220)
-        ctx.addPageWidget("general", cb.button)
-        ctx.addPageWidget("general", cb.label)
-        ctx.SettingsUi.controls["global_" .. item.key] = cb
-        bindGlobalToggle(ctx, item, cb)
+    addSection(ctx, "units", wnd, "nnpUnitInteraction", "Interaction", nil, 24, 320, 700)
+    addGlobalToggleControl(ctx, "units", wnd, "click_target", 24, 356, 260)
+end
+
+function Pages.BuildLayoutPage(ctx, wnd)
+    addSection(ctx, "layout", wnd, "nnpLayoutVisibility", "Pieces", "Pick which parts of each nameplate stay visible.", 24, 112, 700)
+    for index, item in ipairs(ctx.Schema.STYLE_TOGGLES or {}) do
+        local colX = index <= 4 and 24 or 388
+        local row = index <= 4 and index or (index - 4)
+        addStyleToggleControl(ctx, "layout", wnd, item, colX, 160 + ((row - 1) * 34), 220)
     end
 
-    addSection(ctx, "general", wnd, "nnpLayer", "Layer", nil, 24, 546, 700)
+    addSection(ctx, "layout", wnd, "nnpLayoutMode", "Modes", "Switch how names, values, and health fills are arranged.", 24, 330, 700)
+    for index, item in ipairs(ctx.Schema.STYLE_CHOICES or {}) do
+        local col = (index - 1) % 2
+        local row = math.floor((index - 1) / 2)
+        addStyleChoiceControl(ctx, "layout", wnd, item, col == 0 and 24 or 388, 378 + (row * 42))
+    end
+
+    addSection(ctx, "layout", wnd, "nnpLayoutFrame", "Size", "Tune the bar block before adjusting offsets.", 24, 500, 700)
+    local shown = 0
+    eachSlider(ctx.Schema.LAYOUT_SLIDERS, function(_, item)
+        if item.key ~= "x_offset" and item.key ~= "y_offset" then
+            shown = shown + 1
+            local colX = shown <= 4 and 24 or 388
+            local row = shown <= 4 and shown or (shown - 4)
+            addStyleSliderControl(ctx, "layout", wnd, "nnpLayoutSlider", item, colX, 548 + ((row - 1) * 34))
+        end
+    end)
+end
+
+function Pages.BuildTextPage(ctx, wnd)
+    addSection(ctx, "text", wnd, "nnpTextFonts", "Fonts and Limits", "Use 0 chars for full names.", 24, 112, 700)
+    eachSlider(ctx.Schema.TEXT_SLIDERS, function(index, item)
+        if index <= 9 then
+            local colX = index <= 5 and 24 or 388
+            local localIndex = index <= 5 and index or (index - 5)
+            addStyleSliderControl(ctx, "text", wnd, "nnpTextSlider", item, colX, 160 + ((localIndex - 1) * 34))
+        end
+    end)
+end
+
+function Pages.BuildPositionsPage(ctx, wnd)
+    addSection(ctx, "positions", wnd, "nnpPositionFrame", "Frame Anchor", "Move the whole nameplate block relative to the game name tag.", 24, 112, 700)
+
+    local offsetSliders = {}
+    for _, item in ipairs(ctx.Schema.LAYOUT_SLIDERS or {}) do
+        if item.key == "x_offset" or item.key == "y_offset" then
+            offsetSliders[#offsetSliders + 1] = item
+        end
+    end
+    for index, item in ipairs(offsetSliders) do
+        addStyleSliderControl(ctx, "positions", wnd, "nnpPositionFrameSlider", item, 24 + ((index - 1) * 364), 160)
+    end
+
+    addSection(ctx, "positions", wnd, "nnpPositionText", "Text Offsets", "Fine-tune text only after size and layout feel right.", 24, 250, 700)
+    local shown = 0
+    eachSlider(ctx.Schema.TEXT_SLIDERS, function(index, item)
+        if index >= 10 then
+            shown = shown + 1
+            local colX = shown <= 4 and 24 or 388
+            local row = shown <= 4 and shown or (shown - 4)
+            addStyleSliderControl(ctx, "positions", wnd, "nnpPositionTextSlider", item, colX, 298 + ((row - 1) * 34))
+        end
+    end)
+end
+
+function Pages.BuildCcPage(ctx, wnd)
+    addSection(ctx, "cc", wnd, "nnpCcVisibility", "Filters", "Choose which CC families deserve icons and which can stay hidden.", 24, 112, 700)
+    local ccToggles = ctx.Schema.CC_TOGGLES or {}
+    local splitIndex = math.max(1, math.ceil(#ccToggles / 2))
+    for index, item in ipairs(ccToggles) do
+        local isRightColumn = index > splitIndex
+        local colX = isRightColumn and 396 or 24
+        local rowIndex = isRightColumn and (index - splitIndex) or index
+        local rowY = 160 + ((rowIndex - 1) * 32)
+        local cb = ctx.createCheckbox("nnpCcToggle" .. item.key, wnd, item.label, colX, rowY, 220)
+        ctx.addPageWidget("cc", cb.button)
+        ctx.addPageWidget("cc", cb.label)
+        ctx.SettingsUi.controls["cc_toggle_" .. item.key] = cb
+        bindStyleToggle(ctx, item, cb)
+    end
+
+    addSection(ctx, "cc", wnd, "nnpCcRules", "Rules", "Anchor and icon count change the overall footprint more than size alone.", 24, 350, 700)
+    local ccChoices = ctx.Schema.CC_CHOICES or {}
+    local ccChoiceRows = math.max(1, math.ceil(#ccChoices / 2))
+    for index, item in ipairs(ccChoices) do
+        local localIndex = index - 1
+        local colX = (localIndex % 2 == 0) and 24 or 396
+        local rowY = 398 + (math.floor(localIndex / 2) * 34)
+        local label, btn = ctx.createChoiceRow("nnpCcChoice" .. item.key, wnd, item.label, colX, rowY, 170)
+        ctx.addPageWidget("cc", label)
+        ctx.addPageWidget("cc", btn)
+        ctx.SettingsUi.controls["cc_choice_" .. item.key] = btn
+        bindStyleChoice(ctx, item, btn)
+    end
+
+    local placementSectionY = 462 + ((ccChoiceRows - 1) * 42)
+    local placementSliderStartY = 510 + ((ccChoiceRows - 1) * 42)
+    addSection(ctx, "cc", wnd, "nnpCcPlacement", "Placement", "Size and offsets decide how close CC sits to the bar and text.", 24, placementSectionY, 700)
+    eachSlider(ctx.Schema.CC_SLIDERS or {}, function(index, item)
+        local colX = index <= 3 and 24 or 388
+        local localIndex = index <= 3 and index or (index - 3)
+        local rowY = placementSliderStartY + ((localIndex - 1) * 34)
+        local label, slider, value = createTightSlider(ctx, "nnpCcSlider" .. item.key, wnd, item.label, colX, rowY, item.min, item.max)
+        ctx.addPageWidget("cc", label)
+        ctx.addPageWidget("cc", slider)
+        ctx.addPageWidget("cc", value)
+        ctx.SettingsUi.controls["cc_slider_" .. item.key] = slider
+        ctx.SettingsUi.controls["cc_slider_val_" .. item.key] = value
+        bindStyleSlider(ctx, item, slider, value)
+    end)
+
+    local alertsSectionY = placementSliderStartY + 98
+    addSection(ctx, "cc", wnd, "nnpAlerts", "Alerts", "Flash urgent HP-bar borders without changing icon placement.", 24, alertsSectionY, 700)
+    for index, item in ipairs(ctx.Schema.ALERT_TOGGLES or {}) do
+        local colX = index == 1 and 24 or 388
+        local cb = ctx.createCheckbox("nnpAlertToggle" .. item.key, wnd, item.label, colX, alertsSectionY + 48, 260)
+        ctx.addPageWidget("cc", cb.button)
+        ctx.addPageWidget("cc", cb.label)
+        ctx.SettingsUi.controls["alert_toggle_" .. item.key] = cb
+        bindStyleToggle(ctx, item, cb)
+    end
+    eachSlider(ctx.Schema.ALERT_SLIDERS or {}, function(index, item)
+        local rowY = alertsSectionY + 84 + ((index - 1) * 34)
+        local label, slider, value = createTightSlider(ctx, "nnpAlertSlider" .. item.key, wnd, item.label, 24, rowY, item.min, item.max)
+        ctx.addPageWidget("cc", label)
+        ctx.addPageWidget("cc", slider)
+        ctx.addPageWidget("cc", value)
+        ctx.SettingsUi.controls["alert_slider_" .. item.key] = slider
+        ctx.SettingsUi.controls["alert_slider_val_" .. item.key] = value
+        bindStyleSlider(ctx, item, slider, value)
+    end)
+end
+
+function Pages.BuildAdvancedPage(ctx, wnd)
+    addSection(ctx, "advanced", wnd, "nnpAdvancedAnchor", "Anchoring", nil, 24, 112, 320)
+    addGlobalToggleControl(ctx, "advanced", wnd, "anchor_to_nametag", 24, 148, 260)
+
+    addSection(ctx, "advanced", wnd, "nnpLauncher", "Launcher", nil, 388, 112, 320)
+    local label, slider, value = ctx.createSlider("nnpGlobalSliderButtonSize", wnd, "Icon size", 388, 148, 32, 96, {
+        label_width = 104,
+        slider_width = 150,
+        value_width = 44,
+        slider_offset = 102,
+        value_offset = 260
+    })
+    ctx.addPageWidget("advanced", label)
+    ctx.addPageWidget("advanced", slider)
+    ctx.addPageWidget("advanced", value)
+    ctx.SettingsUi.controls.global_slider_button_size = slider
+    ctx.SettingsUi.controls.global_slider_val_button_size = value
+    bindGlobalSlider(ctx, "button_size", slider, value)
+
+    addSection(ctx, "advanced", wnd, "nnpLayer", "Draw Layer", nil, 24, 248, 700)
     local choice = (ctx.Schema.GLOBAL_CHOICES or {})[1]
-    local choiceY = 578
+    local choiceY = 286
     if choice ~= nil then
         local label, button = ctx.createChoiceRow("nnpGlobalChoice" .. choice.key, wnd, choice.label, 24, choiceY, 156)
-        ctx.addPageWidget("general", label)
+        ctx.addPageWidget("advanced", label)
         if choice.use_option_buttons then
             if button.Show ~= nil then
                 button:Show(false)
             end
         else
-            ctx.addPageWidget("general", button)
+            ctx.addPageWidget("advanced", button)
             ctx.SettingsUi.controls["global_choice_" .. choice.key] = button
             bindGlobalChoice(ctx, choice, button)
         end
@@ -221,163 +432,27 @@ function Pages.BuildGeneralPage(ctx, wnd)
                 buttonWidth,
                 28
             )
-            ctx.addPageWidget("general", optionBtn)
+            ctx.addPageWidget("advanced", optionBtn)
             ctx.SettingsUi.controls["global_choice_option_" .. choice.key .. "_" .. tostring(option.value)] = optionBtn
             bindGlobalChoiceOption(ctx, choice, option, optionBtn)
             descY = math.max(descY, buttonY + 40)
         end
 
         local desc = ctx.createLabel("nnpGlobalChoiceDesc" .. choice.key, wnd, "", 24, descY, 12, 700)
-        ctx.addPageWidget("general", desc)
+        ctx.addPageWidget("advanced", desc)
         ctx.SettingsUi.controls["global_choice_desc_" .. choice.key] = desc
-        ctx.addPageWidget("general", ctx.createLabel("nnpLayerHint1", wnd, "Tip: Game or Background usually keeps bars under map, bags, and bigger AAClassic windows.", 24, descY + 22, 12, 700))
+        ctx.addPageWidget("advanced", ctx.createLabel("nnpLayerHint1", wnd, "Game or Background usually keeps bars under map, bags, and bigger AAClassic windows.", 24, descY + 22, 12, 700))
     end
 
-    addSection(ctx, "general", wnd, "nnpLauncher", "Launcher", nil, 24, 728, 700)
-    local label, slider, value = ctx.createSlider("nnpGlobalSliderButtonSize", wnd, "Icon size", 24, 760, 32, 96, {
-        label_width = 120,
-        slider_width = 190,
-        value_width = 44,
-        slider_offset = 116,
-        value_offset = 314
-    })
-    ctx.addPageWidget("general", label)
-    ctx.addPageWidget("general", slider)
-    ctx.addPageWidget("general", value)
-    ctx.SettingsUi.controls.global_slider_button_size = slider
-    ctx.SettingsUi.controls.global_slider_val_button_size = value
-    bindGlobalSlider(ctx, "button_size", slider, value)
-end
-
-function Pages.BuildLayoutPage(ctx, wnd)
-    ctx.addPageWidget("layout", ctx.createLabel("nnpLayoutTitle", wnd, "Layout", 24, 98, 16, 220))
-    ctx.addPageWidget("layout", ctx.createLabel("nnpLayoutHint", wnd, "Tune what shows, how the frame is built, and where the bar sits.", 24, 122, 12, 660))
-
-    addSection(ctx, "layout", wnd, "nnpLayoutVisibility", "Visibility", "Pick which pieces of each bar stay visible.", 24, 154, 700)
-    for index, item in ipairs(ctx.Schema.STYLE_TOGGLES or {}) do
-        local colX = index <= 4 and 24 or 364
-        local rowY = 202 + (((index - 1) % 4) * 34)
-        local cb = ctx.createCheckbox("nnpStyleToggle" .. item.key, wnd, item.label, colX, rowY, 210)
-        ctx.addPageWidget("layout", cb.button)
-        ctx.addPageWidget("layout", cb.label)
-        ctx.SettingsUi.controls["style_toggle_" .. item.key] = cb
-        bindStyleToggle(ctx, item, cb)
+    addSection(ctx, "advanced", wnd, "nnpRuntime", "Runtime", nil, 24, 542, 700)
+    for index = 1, 3 do
+        local line = ctx.createLabel("nnpRuntimeLine" .. tostring(index), wnd, "", 24, 574 + ((index - 1) * 22), 12, 700)
+        ctx.addPageWidget("advanced", line)
+        ctx.SettingsUi.controls["runtime_line_" .. tostring(index)] = line
     end
-
-    addSection(ctx, "layout", wnd, "nnpLayoutMode", "Style", "Switch how names and values are arranged before you fine-tune sliders.", 24, 360, 700)
-    for index, item in ipairs(ctx.Schema.STYLE_CHOICES or {}) do
-        local col = (index - 1) % 2
-        local row = math.floor((index - 1) / 2)
-        local rowY = 408 + (row * 42)
-        local colX = col == 0 and 24 or 388
-        local label, btn = ctx.createChoiceRow("nnpChoice" .. item.key, wnd, item.label, colX, rowY, 170)
-        ctx.addPageWidget("layout", label)
-        ctx.addPageWidget("layout", btn)
-        ctx.SettingsUi.controls["style_choice_" .. item.key] = btn
-        bindStyleChoice(ctx, item, btn)
-    end
-
-    addSection(ctx, "layout", wnd, "nnpLayoutFrame", "Frame", "Size, alpha, range, and anchor offsets for the full bar block.", 24, 532, 700)
-    eachSlider(ctx.Schema.LAYOUT_SLIDERS, function(index, item)
-        local colX = index <= 5 and 24 or 388
-        local localIndex = index <= 5 and index or (index - 5)
-        local rowY = 580 + ((localIndex - 1) * 34)
-        local label, slider, value = createTightSlider(ctx, "nnpLayoutSlider" .. item.key, wnd, item.label, colX, rowY, item.min, item.max)
-        ctx.addPageWidget("layout", label)
-        ctx.addPageWidget("layout", slider)
-        ctx.addPageWidget("layout", value)
-        ctx.SettingsUi.controls["style_slider_" .. item.key] = slider
-        ctx.SettingsUi.controls["style_slider_val_" .. item.key] = value
-        bindStyleSlider(ctx, item, slider, value)
-    end)
-end
-
-function Pages.BuildTextPage(ctx, wnd)
-    ctx.addPageWidget("text", ctx.createLabel("nnpTextTitle", wnd, "Text", 24, 98, 16, 220))
-    ctx.addPageWidget("text", ctx.createLabel("nnpTextHint", wnd, "Use 0 chars for full names. Value X/Y moves both HP and MP text together.", 24, 122, 12, 700))
-
-    addSection(ctx, "text", wnd, "nnpTextFonts", "Fonts and Limits", "Tune sizes first, then trim names only if the bars still feel crowded.", 24, 154, 700)
-    eachSlider(ctx.Schema.TEXT_SLIDERS, function(index, item)
-        if index <= 9 then
-            local colX = index <= 5 and 24 or 388
-            local localIndex = index <= 5 and index or (index - 5)
-            local rowY = 202 + ((localIndex - 1) * 34)
-            local label, slider, value = createTightSlider(ctx, "nnpTextSlider" .. item.key, wnd, item.label, colX, rowY, item.min, item.max)
-            ctx.addPageWidget("text", label)
-            ctx.addPageWidget("text", slider)
-            ctx.addPageWidget("text", value)
-            ctx.SettingsUi.controls["style_slider_" .. item.key] = slider
-            ctx.SettingsUi.controls["style_slider_val_" .. item.key] = value
-            bindStyleSlider(ctx, item, slider, value)
-        end
-    end)
-
-    addSection(ctx, "text", wnd, "nnpTextOffsets", "Offsets", "Use offsets only after the font sizes feel right.", 24, 402, 700)
-    eachSlider(ctx.Schema.TEXT_SLIDERS, function(index, item)
-        if index >= 10 then
-            local offsetIndex = index - 9
-            local colX = offsetIndex <= 4 and 24 or 388
-            local localIndex = offsetIndex <= 4 and offsetIndex or (offsetIndex - 4)
-            local rowY = 450 + ((localIndex - 1) * 34)
-            local label, slider, value = createTightSlider(ctx, "nnpTextSlider" .. item.key, wnd, item.label, colX, rowY, item.min, item.max)
-            ctx.addPageWidget("text", label)
-            ctx.addPageWidget("text", slider)
-            ctx.addPageWidget("text", value)
-            ctx.SettingsUi.controls["style_slider_" .. item.key] = slider
-            ctx.SettingsUi.controls["style_slider_val_" .. item.key] = value
-            bindStyleSlider(ctx, item, slider, value)
-        end
-    end)
-end
-
-function Pages.BuildCcPage(ctx, wnd)
-    ctx.addPageWidget("cc", ctx.createLabel("nnpCcTitle", wnd, "Crowd Control", 24, 98, 16, 220))
-    ctx.addPageWidget("cc", ctx.createLabel("nnpCcHint", wnd, "Attach CC icons and timers directly to the bar frame, then tune size and placement.", 24, 122, 12, 700))
-
-    addSection(ctx, "cc", wnd, "nnpCcVisibility", "Filters", "Choose which CC families deserve icons and which can stay hidden.", 24, 154, 700)
-    local ccToggles = ctx.Schema.CC_TOGGLES or {}
-    local splitIndex = math.max(1, math.ceil(#ccToggles / 2))
-    for index, item in ipairs(ccToggles) do
-        local isRightColumn = index > splitIndex
-        local colX = isRightColumn and 396 or 24
-        local rowIndex = isRightColumn and (index - splitIndex) or index
-        local rowY = 202 + ((rowIndex - 1) * 32)
-        local cb = ctx.createCheckbox("nnpCcToggle" .. item.key, wnd, item.label, colX, rowY, 220)
-        ctx.addPageWidget("cc", cb.button)
-        ctx.addPageWidget("cc", cb.label)
-        ctx.SettingsUi.controls["cc_toggle_" .. item.key] = cb
-        bindStyleToggle(ctx, item, cb)
-    end
-
-    addSection(ctx, "cc", wnd, "nnpCcRules", "Rules", "Anchor and icon count change the overall footprint more than size alone.", 24, 392, 700)
-    local ccChoices = ctx.Schema.CC_CHOICES or {}
-    local ccChoiceRows = math.max(1, math.ceil(#ccChoices / 2))
-    for index, item in ipairs(ccChoices) do
-        local localIndex = index - 1
-        local colX = (localIndex % 2 == 0) and 24 or 396
-        local rowY = 440 + (math.floor(localIndex / 2) * 34)
-        local label, btn = ctx.createChoiceRow("nnpCcChoice" .. item.key, wnd, item.label, colX, rowY, 170)
-        ctx.addPageWidget("cc", label)
-        ctx.addPageWidget("cc", btn)
-        ctx.SettingsUi.controls["cc_choice_" .. item.key] = btn
-        bindStyleChoice(ctx, item, btn)
-    end
-
-    local placementSectionY = 504 + ((ccChoiceRows - 1) * 42)
-    local placementSliderStartY = 552 + ((ccChoiceRows - 1) * 42)
-    addSection(ctx, "cc", wnd, "nnpCcPlacement", "Placement", "Size and offsets decide how close CC sits to the bar and text.", 24, placementSectionY, 700)
-    eachSlider(ctx.Schema.CC_SLIDERS or {}, function(index, item)
-        local colX = index <= 3 and 24 or 388
-        local localIndex = index <= 3 and index or (index - 3)
-        local rowY = placementSliderStartY + ((localIndex - 1) * 34)
-        local label, slider, value = createTightSlider(ctx, "nnpCcSlider" .. item.key, wnd, item.label, colX, rowY, item.min, item.max)
-        ctx.addPageWidget("cc", label)
-        ctx.addPageWidget("cc", slider)
-        ctx.addPageWidget("cc", value)
-        ctx.SettingsUi.controls["cc_slider_" .. item.key] = slider
-        ctx.SettingsUi.controls["cc_slider_val_" .. item.key] = value
-        bindStyleSlider(ctx, item, slider, value)
-    end)
+    local runtimeWarn = ctx.createLabel("nnpRuntimeWarn", wnd, "", 24, 648, 12, 700)
+    ctx.addPageWidget("advanced", runtimeWarn)
+    ctx.SettingsUi.controls.runtime_warning = runtimeWarn
 end
 
 function Pages.BuildColorsPage(ctx, wnd)
