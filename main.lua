@@ -41,7 +41,7 @@ local Compat = modules.compat
 local addon = {
     name = "Nuzi Nameplates",
     author = "Nuzi",
-    version = "1.6.5",
+    version = "1.6.7",
     desc = "Overhead raid nameplates"
 }
 

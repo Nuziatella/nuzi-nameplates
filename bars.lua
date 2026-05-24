@@ -104,6 +104,8 @@ local CC_FLASH_PERIOD_MS = 760
 local CC_FLASH_MIN_ALPHA = 0.30
 local CRITICAL_FLASH_BORDER_COLOR = { 255, 0, 0, 255 }
 local CC_FLASH_BORDER_COLOR = { 180, 72, 255, 255 }
+local NAMETAG_ANCHOR_MAX_DELTA_X = 420
+local NAMETAG_ANCHOR_MAX_DELTA_Y = 320
 local CC_CATEGORY_STYLE_KEYS = {
     hard = "show_cc_hard",
     silence = "show_cc_silence",
@@ -129,39 +131,16 @@ local function safeUiNowMs()
     return tonumber(value) or 0
 end
 
-local function getUiScale()
-    if api.Interface == nil or api.Interface.GetUIScale == nil then
-        return 1
+local function isPlausibleNametagAnchor(tagX, tagY, unitX, unitY)
+    local x = tonumber(tagX)
+    local y = tonumber(tagY)
+    local baseX = tonumber(unitX)
+    local baseY = tonumber(unitY)
+    if x == nil or y == nil or baseX == nil or baseY == nil then
+        return false
     end
-    local scale = tonumber(api.Interface:GetUIScale()) or 1
-    if scale > 10 then
-        scale = scale / 100
-    end
-    if scale <= 0 then
-        return 1
-    end
-    return scale
-end
-
-local function screenPositionToUi(screenX, screenY, screenZ)
-    local x = tonumber(screenX)
-    local y = tonumber(screenY)
-    if x == nil or y == nil then
-        return nil, nil, screenZ
-    end
-    if F_LAYOUT ~= nil and type(F_LAYOUT.CalcDontApplyUIScale) == "function" then
-        local uiX = nil
-        local uiY = nil
-        local ok = pcall(function()
-            uiX = F_LAYOUT.CalcDontApplyUIScale(x)
-            uiY = F_LAYOUT.CalcDontApplyUIScale(y)
-        end)
-        if ok and tonumber(uiX) ~= nil and tonumber(uiY) ~= nil then
-            return tonumber(uiX), tonumber(uiY), screenZ
-        end
-    end
-    local scale = getUiScale()
-    return x / scale, y / scale, screenZ
+    return math.abs(x - baseX) <= NAMETAG_ANCHOR_MAX_DELTA_X
+        and math.abs(y - baseY) <= NAMETAG_ANCHOR_MAX_DELTA_Y
 end
 
 local function setWidgetPickable(widget, enabled)
@@ -1946,17 +1925,36 @@ local function getScreenPosition(frame, unit, settings)
     end
     local cache = frame ~= nil and frame.cache or nil
     local preferredMethod = cache ~= nil and tostring(cache.position_method or "") or ""
+    local readScreenPosition = false
+    local unitScreenX = nil
+    local unitScreenY = nil
+    local unitScreenZ = nil
+    local function readUnitScreenPosition()
+        if api.Unit.GetUnitScreenPosition == nil then
+            return nil, nil, nil
+        end
+        if not readScreenPosition then
+            readScreenPosition = true
+            unitScreenX, unitScreenY, unitScreenZ = api.Unit:GetUnitScreenPosition(unit)
+        end
+        return unitScreenX, unitScreenY, unitScreenZ
+    end
     local function tryNametag()
         if not settings.anchor_to_nametag or api.Unit.GetUnitScreenNameTagOffset == nil then
             return nil, nil, nil
         end
-        if not unitHasLiveScreenPosition(unit) then
+        local baseX, baseY = readUnitScreenPosition()
+        if baseX == nil or baseY == nil then
             return nil, nil, nil
         end
-        return api.Unit:GetUnitScreenNameTagOffset(unit)
+        local tagX, tagY, tagZ = api.Unit:GetUnitScreenNameTagOffset(unit)
+        if not isPlausibleNametagAnchor(tagX, tagY, baseX, baseY) then
+            return nil, nil, nil
+        end
+        return tagX, tagY, tagZ
     end
     local function tryScreen()
-        return api.Unit:GetUnitScreenPosition(unit)
+        return readUnitScreenPosition()
     end
 
     local order = {}
@@ -1976,9 +1974,6 @@ local function getScreenPosition(frame, unit, settings)
             screenX, screenY, screenZ = tryNametag()
         else
             screenX, screenY, screenZ = tryScreen()
-        end
-        if screenX ~= nil and screenY ~= nil then
-            screenX, screenY, screenZ = screenPositionToUi(screenX, screenY, screenZ)
         end
         if screenX ~= nil and screenY ~= nil then
             if cache ~= nil then
