@@ -11,6 +11,7 @@ Because stock nameplates are fine right up until the raid starts moving.
 - shows role icons, distance text, target highlighting, and CC timers
 - includes a movable launcher icon and in-game settings window
 - supports layout presets, named profiles, and local backups
+- can use patched stock nametag color APIs instead of drawing custom HP bars
 
 ## Install
 
@@ -74,4 +75,4 @@ You can:
 - The launcher icon has its own saved position file so profile swaps do not reset it.
 - AAClassic does not expose addon targeting for `target`, `watchtarget`, or `targettarget`; `watchtarget` and `targettarget` bars are click-through so the stock/game target behind them can receive the click.
 
-1.6.7
+1.6.8

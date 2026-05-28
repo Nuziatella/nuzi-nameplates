@@ -20,17 +20,44 @@ local function hasFunction(tbl, key)
     return type(tbl) == "table" and type(tbl[key]) == "function"
 end
 
+local NAMETAG_COLOR_SETTERS = {
+    "SetColorFriendly",
+    "SetColorFriendlyNPC",
+    "SetColorNeutral",
+    "SetColorParty",
+    "SetColorRaid",
+    "SetColorRaidPK",
+    "SetColorPK",
+    "SetColorEnemy",
+    "SetColorMonster",
+    "SetColorPirate"
+}
+
+local function hasNametagColorSetters()
+    local nametag = type(api) == "table" and type(api.Nametag) == "table" and api.Nametag or nil
+    if nametag == nil then
+        return false
+    end
+    for _, key in ipairs(NAMETAG_COLOR_SETTERS) do
+        if type(nametag[key]) ~= "function" then
+            return false
+        end
+    end
+    return true
+end
+
 local function append(list, value)
     list[#list + 1] = value
 end
 
 local function buildRuntimeText(caps)
     local anchorText = caps.nametag_anchor and "Name tag" or (caps.screen_position and "Screen position" or "Unavailable")
+    local colorText = caps.stock_nametag_colors and "Available" or "Unavailable"
     local sliderText = caps.slider_factory and (caps.nuzi_core_slider and "Nuzi Core" or "Available") or "Unavailable"
     local barsText = caps.statusbar_factory and "Available" or "Unavailable"
     return {
         string.format("Render: %s", caps.render_supported and "Supported" or "Blocked"),
-        string.format("Anchoring: %s", anchorText),
+        string.format("Anchoring: %s | Stock colors: %s", anchorText, colorText),
         string.format("Sliders: %s | Status bars: %s", sliderText, barsText)
     }
 end
@@ -55,6 +82,7 @@ function Compat.Probe(force)
         root_window = api.rootWindow ~= nil,
         statusbar_factory = type(W_BAR) == "table" and type(W_BAR.CreateStatusBarOfRaidFrame) == "function",
         nametag_anchor = hasFunction(api.Unit, "GetUnitScreenNameTagOffset"),
+        stock_nametag_colors = hasNametagColorSetters(),
         screen_position = hasFunction(api.Unit, "GetUnitScreenPosition"),
         unit_id = hasFunction(api.Unit, "GetUnitId"),
         unit_info = hasFunction(api.Unit, "GetUnitInfoById") or hasFunction(api.Unit, "UnitInfo"),

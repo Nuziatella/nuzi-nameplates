@@ -9,7 +9,7 @@ local Shared = {}
 Shared.CONSTANTS = {
     ADDON_ID = "nuzi-nameplates",
     TITLE = "Nuzi Nameplates",
-    VERSION = "1.6.7",
+    VERSION = "1.6.8",
     BUTTON_ID = "nuziNameplatesSettingsButton",
     WINDOW_ID = "nuziNameplatesSettingsWindow",
     DATA_DIR = "nuzi-nameplates/.data",
@@ -114,6 +114,7 @@ end
 
 Shared.DEFAULT_SETTINGS = {
     enabled = true,
+    stock_nametag_colors = false,
     anchor_to_nametag = true,
     click_target = true,
     click_through_ctrl = true,
@@ -165,6 +166,15 @@ local function normalizeMainSettings(settings)
     if type(settings.style) ~= "table" then
         settings.style = Runtime.DeepCopy(Shared.DEFAULT_SETTINGS.style)
         changed = true
+    end
+    if settings.stock_nametag_colors == nil then
+        settings.stock_nametag_colors = Shared.DEFAULT_SETTINGS.stock_nametag_colors
+        changed = true
+    else
+        local value = settings.stock_nametag_colors and true or false
+        if assignChanged(settings, "stock_nametag_colors", value) then
+            changed = true
+        end
     end
 
     if settings.full_name_migration_v1 ~= true then

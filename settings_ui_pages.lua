@@ -219,6 +219,7 @@ function Pages.BuildGeneralPage(ctx, wnd)
 
     addSection(ctx, "general", wnd, "nnpCore", "Core", nil, 24, 234, 320)
     addGlobalToggleControl(ctx, "general", wnd, "enabled", 24, 270, 260)
+    addGlobalToggleControl(ctx, "general", wnd, "stock_nametag_colors", 24, 304, 260)
 
     addSection(ctx, "general", wnd, "nnpGeneralProfiles", "Profiles", nil, 388, 234, 320)
     ctx.addPageWidget("general", ctx.createLabel("nnpGeneralProfilesHint", wnd, "Save, load, and reset profiles from the footer.", 388, 270, 12, 320))

@@ -18,6 +18,7 @@ local Layout = loadModule("bars_layout")
 local Role = loadModule("role")
 local Compat = loadModule("compat")
 local CcEffects = loadModule("cc_effects")
+local StockNametag = loadModule("stock_nametag")
 
 local Bars = {
     frames = {},
@@ -37,7 +38,9 @@ local Bars = {
     hovered_unit = nil,
     layer_mode = nil,
     owner_source_last_build_ms = 0,
-    last_visible_bulk_position_ms = 0
+    last_visible_bulk_position_ms = 0,
+    stock_nametag_active = false,
+    stock_nametag_color_key = nil
 }
 
 local applyLayerToFrame
@@ -2598,17 +2601,29 @@ local function getVisibleBulkDataBatchSize(visibleCount)
 end
 
 local function prepareUpdateState()
+    local settings = Shared.EnsureSettings()
+    if not settings.enabled then
+        Bars.stock_nametag_active = false
+        Bars.stock_nametag_color_key = nil
+        Bars.Reset()
+        return nil, nil
+    end
+    local cfg = Shared.GetStyleSettings()
+    if settings.stock_nametag_colors == true and StockNametag ~= nil and StockNametag.Apply(cfg, Bars) then
+        if Bars.stock_nametag_active ~= true then
+            Bars.Reset()
+        end
+        Bars.stock_nametag_active = true
+        return nil, nil
+    end
+    Bars.stock_nametag_active = false
+    Bars.stock_nametag_color_key = nil
     if Compat ~= nil and not Compat.IsRenderable() then
         Bars.Reset()
         return nil, nil
     end
-    local settings = Shared.EnsureSettings()
     syncLayerMode(settings)
-    if not settings.enabled then
-        Bars.Reset()
-        return nil, nil
-    end
-    return settings, Shared.GetStyleSettings()
+    return settings, cfg
 end
 
 local function updatePositionsForUnits(unitKeys, settings, cfg, positionSources, renderOwners)
@@ -2881,6 +2896,7 @@ function Bars.Reset()
     Bars.hovered_unit = nil
     Bars.owner_source_last_build_ms = 0
     Bars.last_visible_bulk_position_ms = 0
+    Bars.stock_nametag_active = false
     for _, frame in pairs(Bars.frames) do
         hideFrame(frame)
     end
@@ -2920,6 +2936,8 @@ function Bars.Unload()
     Bars.hovered_unit = nil
     Bars.owner_source_last_build_ms = 0
     Bars.last_visible_bulk_position_ms = 0
+    Bars.stock_nametag_active = false
+    Bars.stock_nametag_color_key = nil
 end
 
 return Bars

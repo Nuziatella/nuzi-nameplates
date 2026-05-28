@@ -2,6 +2,7 @@ local Schema = {}
 
 Schema.GLOBAL_TOGGLES = {
     { key = "enabled", label = "Addon on" },
+    { key = "stock_nametag_colors", label = "Stock colored nametags" },
     { key = "anchor_to_nametag", label = "Name tag anchor" },
     { key = "click_target", label = "Click to target" },
     { key = "show_player", label = "Self" },
